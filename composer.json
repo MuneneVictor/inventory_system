@@ -1,0 +1,17 @@
+{
+    "name": "victor/inventory_system",
+    "autoload": {
+        "psr-4": {
+            "Victor\\InventorySystem\\": "src/"
+        }
+    },
+    "authors": [
+        {
+            "name": "munenevictor",
+            "email": "victormunene207@gmail.com"
+        }
+    ],
+    "require": {
+        "phpoffice/phpspreadsheet": "^5.3"
+    }
+}
