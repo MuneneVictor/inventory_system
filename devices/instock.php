@@ -8,6 +8,10 @@ require_once "../includes/sidebar.php";
 $role = $_SESSION['role'];
 $user_id = $_SESSION['user_id'];
 
+if(!in_array($_SESSION['role'], ['super_admin', 'inventory_admin','manager', 'sales'])){
+    die("Access denied!");
+}
+
 // Get manager's branch from database
 $user_branch = '';
 if ($role === 'manager') {
@@ -525,7 +529,18 @@ $total_branches = count($unique_branches);
             In Stock Devices
         </h1>
         <div class="breadcrumb">
-            <a href="/inventory_system/dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a>
+             <?php if($_SESSION['role'] === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'inventory_admin'): ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'sales'): ?>
+                <a href="/inventory_system/dashboard/salesdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
             <span> / </span>
             <span>In Stock Devices</span>
         </div>

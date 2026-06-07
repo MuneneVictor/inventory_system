@@ -130,17 +130,18 @@ require_once "../includes/auth_check.php";
             <?php endif; ?>
             
             <!-- Chargers Section -->
-            <?php if(in_array($role, ['super_admin','manager','inventory_admin','maintenance'])): ?>
+            <?php if(in_array($role, ['super_admin','manager','inventory_admin','software'])): ?>
                 <div class="menu-section">Chargers</div>
+              
+                <?php if(in_array($role, ['super_admin','manager','inventory_admin'])): ?>
                 <a href="/inventory_system/chargers/add_charger.php" class="menu-item">
                     <i class="fas fa-plus"></i> Add Charger
                 </a>
-                <?php if(in_array($role, ['super_admin','manager','inventory_admin'])): ?>
                     <a href="/inventory_system/chargers/chargers_instocks.php" class="menu-item">
                         <i class="fas fa-box"></i> Chargers In Stock
                     </a>
                 <?php endif; ?>
-                <?php if(in_array($role, ['inventory_admin','maintenance'])): ?>
+                <?php if(in_array($role, ['inventory_admin','software'])): ?>
                     <a href="/inventory_system/chargers/give_charger.php" class="menu-item">
                         <i class="fas fa-gift"></i> Give Out Charger
                     </a>
@@ -151,21 +152,21 @@ require_once "../includes/auth_check.php";
             <?php endif; ?>
             
             <!-- Software Admin Section -->
-            <?php if(in_array($role, ['super_admin','manager','inventory_admin','maintenance'])): ?>
+            <?php if(in_array($role, ['super_admin','manager','inventory_admin','software'])): ?>
                 <div class="menu-section">Software Dep</div>
-                <?php if($role === 'maintenance'): ?>
-                    <a href="/inventory_system/maintenance/search_device.php" class="menu-item">
+                <?php if($role === 'software'): ?>
+                    <a href="/inventory_system/software/search_device.php" class="menu-item">
                         <i class="fas fa-search"></i> Search Device
                     </a>
                 <?php endif; ?>
-                <?php if(in_array($role, ['maintenance','inventory_admin'])): ?>
-                    <a href="/inventory_system/maintenance/update_specs.php" class="menu-item">
+                <?php if(in_array($role, ['software','inventory_admin'])): ?>
+                    <a href="/inventory_system/software/update_specs.php" class="menu-item">
                         <i class="fas fa-cog"></i> Upgrade/Downgrade
                     </a>
                 <?php endif; ?>
-                <?php if(in_array($role, ['super_admin','manager','inventory_admin','maintenance'])): ?>
-                    <a href="/inventory_system/maintenance/maintenance_logs.php" class="menu-item">
-                        <i class="fas fa-clipboard-list"></i> Maintenance Logs
+                <?php if(in_array($role, ['super_admin','manager','inventory_admin','software'])): ?>
+                    <a href="/inventory_system/software/software_logs.php" class="menu-item">
+                        <i class="fas fa-clipboard-list"></i> Software Logs
                     </a>
                 <?php endif; ?>
             <?php endif; ?>

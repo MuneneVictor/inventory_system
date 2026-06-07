@@ -5,9 +5,8 @@ require_once "../includes/auth_check.php";
 require_once "../includes/header.php";
 require_once "../includes/sidebar.php";
 
-if ($_SESSION['role'] !== 'super_admin') {
-    header("Location: /inventory_system/dashboard/index.php");
-    exit();
+if (!in_array($_SESSION['role'], ['super_admin', 'manager'])) {
+   die("Access denied.");
 }
 
 // Get filter values from GET parameters
@@ -506,7 +505,12 @@ $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
             Price List
         </h1>
         <div class="breadcrumb">
-            <a href="/inventory_system/dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a>
+             <?php if($_SESSION['role'] === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
             <span> / </span>
             <span>Price List</span>
         </div>

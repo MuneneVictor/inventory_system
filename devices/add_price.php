@@ -3,10 +3,9 @@ session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 
-// Only super_admin can access
-if ($_SESSION['role'] !== 'super_admin') {
-    header("Location: /inventory_system/dashboard/index.php");
-    exit();
+// Only super_admin and manager can access
+if (!in_array($_SESSION['role'], ['super_admin', 'manager'])) {
+    die("Access denied.");
 }
 
 // Get all parameters from GET
@@ -512,7 +511,12 @@ require_once "../includes/sidebar.php";
             Add Price
         </h1>
         <div class="breadcrumb">
-            <a href="/inventory_system/dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a>
+             <?php if($_SESSION['role'] === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
             <span> / </span>
             <a href="price_list.php">Price List</a>
             <span> / </span>

@@ -91,9 +91,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $update = $conn->prepare("UPDATE users SET failed_attempts = 0, account_locked_until = NULL, last_login = NOW() WHERE id = :id");
                 $update->execute(['id' => $user['id']]);
-
-                header("Location: ../dashboard/index.php");
-                exit();
+                if ($_SESSION['role'] === 'super_admin') {
+                    header("Location: ../dashboard/superadmindashboard.php");
+                } elseif ($_SESSION['role'] === 'manager') {
+                    header("Location: ../dashboard/managerdashboard.php");
+                } elseif ($_SESSION['role'] === 'inventory_admin') {
+                    header("Location: ../dashboard/inventorydashboard.php");
+                } elseif ($_SESSION['role'] === 'sales'){
+                    header("Location: ../dashboard/salesdashboard.php");
+                } elseif ($_SESSION['role'] === 'software'){
+                    header("Location: ../dashboard/softwaredashboard.php");
+                } elseif ($_SESSION['role'] === 'technician'){
+                    header("Location: ../dashboard/techniciandashboard.php");
+                } elseif ($_SESSION['role'] === 'cashier'){
+                    header("Location: ../dashboard/cashierdashboard.php");
+                }
+                    exit();
             } else {
                 $failed_attempts = $user['failed_attempts'] + 1;
 

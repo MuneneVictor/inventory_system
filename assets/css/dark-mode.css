@@ -1,0 +1,258 @@
+/* Dark Mode Variables and Styles */
+[data-theme="dark"] {
+    --primary: #2d6a4f;
+    --primary-light: #40916c;
+    --primary-dark: #1b4332;
+    --secondary: #1a4f6e;
+    --accent: #f59e0b;
+    --success: #10b981;
+    --warning: #f59e0b;
+    --danger: #ef4444;
+    --info: #3b82f6;
+    
+    /* Dark mode background colors */
+    --bg-body: #0f172a;
+    --bg-card: #1e293b;
+    --bg-sidebar: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+    --bg-header: #1e293b;
+    --bg-table-header: #334155;
+    
+    /* Dark mode text colors */
+    --text-primary: #f1f5f9;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+    
+    /* Dark mode border color */
+    --border-color: #334155;
+    
+    /* Dark mode shadows */
+    --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.5);
+}
+
+/* Apply dark mode to body and main containers */
+[data-theme="dark"] body {
+    background-color: var(--bg-body);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .main-content {
+    background-color: var(--bg-body);
+}
+
+[data-theme="dark"] .header-row,
+[data-theme="dark"] .section,
+[data-theme="dark"] .card,
+[data-theme="dark"] .stat-card,
+[data-theme="dark"] .stat-card-compact,
+[data-theme="dark"] .result-card,
+[data-theme="dark"] .form-card,
+[data-theme="dark"] .page-header,
+[data-theme="dark"] .dashboard-card {
+    background-color: var(--bg-card);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .card.light,
+[data-theme="dark"] .card.light .big {
+    background-color: var(--bg-card);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .page-title,
+[data-theme="dark"] .card .big {
+    color: var(--primary-light);
+}
+
+[data-theme="dark"] .welcome-text,
+[data-theme="dark"] .card .small,
+[data-theme="dark"] .stat-card .stat-label,
+[data-theme="dark"] .stat-card-compact .stat-label {
+    color: var(--text-muted);
+}
+
+/* Tables */
+[data-theme="dark"] .table th {
+    background-color: var(--bg-table-header);
+    color: var(--text-secondary);
+    border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .table td {
+    border-bottom-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .table code {
+    background-color: #334155;
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .table tbody tr:hover {
+    background-color: #334155;
+}
+
+/* Badges */
+[data-theme="dark"] .badge {
+    background-color: #334155;
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .badge-success {
+    background-color: var(--success);
+    color: white;
+}
+
+[data-theme="dark"] .badge-warning {
+    background-color: var(--warning);
+    color: white;
+}
+
+[data-theme="dark"] .badge-danger {
+    background-color: var(--danger);
+    color: white;
+}
+
+[data-theme="dark"] .badge-primary {
+    background-color: var(--primary);
+    color: white;
+}
+
+[data-theme="dark"] .badge-info {
+    background-color: var(--info);
+    color: white;
+}
+
+/* Stats grid and category cards */
+[data-theme="dark"] .stat-item,
+[data-theme="dark"] .category-card {
+    background-color: #334155;
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .stat-item .stat-label,
+[data-theme="dark"] .category-card .category-name {
+    color: var(--text-muted);
+}
+
+[data-theme="dark"] .category-card .category-count {
+    color: var(--primary-light);
+}
+
+/* Chart bars */
+[data-theme="dark"] .chart-bar {
+    background: linear-gradient(180deg, var(--primary-light) 0%, var(--primary) 100%);
+}
+
+[data-theme="dark"] .chart-value,
+[data-theme="dark"] .chart-label {
+    color: var(--text-muted);
+}
+
+/* Links and buttons */
+[data-theme="dark"] .view-all-link {
+    color: var(--primary-light);
+}
+
+[data-theme="dark"] .link-btn {
+    background-color: var(--primary);
+    color: white !important;
+}
+
+[data-theme="dark"] .link-btn:hover {
+    background-color: var(--primary-light);
+}
+
+[data-theme="dark"] .btn-view {
+    background-color: var(--info);
+}
+
+/* Sidebar */
+[data-theme="dark"] .sidebar {
+    background: var(--bg-sidebar);
+}
+
+/* Footer */
+[data-theme="dark"] footer {
+    border-top-color: var(--border-color);
+    color: var(--text-muted);
+}
+
+/* Text colors */
+[data-theme="dark"] .text-success {
+    color: var(--success) !important;
+}
+
+[data-theme="dark"] .text-warning {
+    color: var(--warning) !important;
+}
+
+[data-theme="dark"] .text-muted {
+    color: var(--text-muted) !important;
+}
+
+/* Top categories section */
+[data-theme="dark"] .top-categories .category-badge {
+    background-color: #334155;
+    border-color: var(--border-color);
+}
+
+[data-theme="dark"] .top-categories .category-badge .count {
+    color: var(--primary-light);
+}
+
+[data-theme="dark"] .top-categories .category-badge .name {
+    color: var(--text-secondary);
+}
+
+/* Activity logs and recent items */
+[data-theme="dark"] .repair-item,
+[data-theme="dark"] .sale-item,
+[data-theme="dark"] .stock-item {
+    border-bottom-color: var(--border-color);
+}
+
+[data-theme="dark"] .item-info h4 {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .item-info p {
+    color: var(--text-muted);
+}
+
+/* Quick action buttons */
+[data-theme="dark"] .action-btn {
+    background-color: var(--primary);
+}
+
+[data-theme="dark"] .action-btn:hover {
+    background-color: var(--primary-light);
+}
+
+/* Input fields */
+[data-theme="dark"] input,
+[data-theme="dark"] select,
+[data-theme="dark"] textarea {
+    background-color: #334155;
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] input:focus,
+[data-theme="dark"] select:focus,
+[data-theme="dark"] textarea:focus {
+    border-color: var(--primary);
+    outline: none;
+}
+
+/* Logo image in dark mode */
+[data-theme="dark"] .logo img {
+    filter: brightness(0.9);
+}
+
+/* Smooth transition for all elements */
+* {
+    transition: background-color 0.3s ease, border-color 0.3s ease, color 0.2s ease;
+}

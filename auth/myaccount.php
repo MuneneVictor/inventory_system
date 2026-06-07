@@ -512,7 +512,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
             My Profile
         </h1>
         <div class="breadcrumb">
-            <a href="/inventory_system/dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php if($_SESSION['role'] === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'inventory_admin'): ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'sales'): ?>
+                <a href="/inventory_system/dashboard/salesdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+             <?php if($_SESSION['role'] === 'software'): ?>
+                <a href="/inventory_system/dashboard/softwaredashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+             <?php if($_SESSION['role'] === 'technician'): ?>
+                <a href="/inventory_system/dashboard/techniciandashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+             <?php if($_SESSION['role'] === 'cashier'): ?>
+                <a href="/inventory_system/dashboard/cashierdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
             <span> / </span>
             <span>My Profile</span>
         </div>

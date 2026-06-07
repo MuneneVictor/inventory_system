@@ -455,7 +455,15 @@ if($serial){
             Search Device
         </h1>
         <div class="breadcrumb">
-            <a href="/inventory_system/dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a>
+             <?php if($_SESSION['role'] === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'inventory_admin'): ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
             <span> / </span>
             <span>Search Device</span>
         </div>

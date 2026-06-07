@@ -572,7 +572,15 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
             <span class="serial-code"><?= htmlspecialchars($device['serial_number']) ?></span>
         </h1>
         <div class="breadcrumb">
-            <a href="/inventory_system/dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php if($_SESSION['role'] === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
+            <?php if($_SESSION['role'] === 'inventory_admin'): ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <?php endif; ?>
             <span> / </span>
             <a href="device_list.php">Devices</a>
             <span> / </span>
