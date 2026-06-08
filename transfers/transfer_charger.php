@@ -2,71 +2,46 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
+require_once "../includes/header.php";
+require_once "../includes/sidebar.php";
 
-// Check if user has permission
-$allowed_roles = ['super_admin', 'manager', 'inventory_admin'];
-if(!in_array($_SESSION['role'], $allowed_roles)) {
-    die("Access denied!");
+if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin', 'manager'])) die("ACCESS DENIED.");
+
+$user_id = (int) $_SESSION['user_id'];
+$user_role = $_SESSION['role'];
+$user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
+
+$user_branch = null;
+if ($user_role !== 'super_admin') {
+    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
+    $stmt->execute([$user_id]);
+    $user_branch = $stmt->fetchColumn();
+    if (!$user_branch) die("Your account has no branch assigned.");
 }
 
+$is_super_admin = ($user_role === 'super_admin');
+$availableBranches = ['KIMATHI', 'MOI'];
 $error = $success = "";
 $foundChargers = [];
-$availableBranches = ['KIMATHI', 'MOI'];
-$current_branch = null;
 
-// Get current user's branch
-$user_id = $_SESSION['user_id'];
-$user_stmt = $conn->prepare("SELECT branch FROM users WHERE id = :id");
-$user_stmt->execute(['id' => $user_id]);
-$user = $user_stmt->fetch(PDO::FETCH_ASSOC);
-$current_branch = $user['branch'] ?? null;
+if (isset($_POST['search_chargers'])) $_SESSION['delivered_by'] = trim($_POST['delivered_by'] ?? '');
 
-// Get user's permissions
-$is_super_admin = ($_SESSION['role'] === 'super_admin');
-
-// Store delivered_by in session
-if(isset($_POST['search_chargers'])) {
-    $_SESSION['delivered_by'] = trim($_POST['delivered_by'] ?? '');
-}
-
-// Process search for chargers in a branch
-if(isset($_POST['search_chargers'])) {
+if (isset($_POST['search_chargers'])) {
     $from_branch = $_POST['from_branch'] ?? null;
     $to_branch = $_POST['to_branch'] ?? null;
     $delivered_by = trim($_POST['delivered_by'] ?? '');
-    
-    // If user is not super admin, force from_branch to be their current branch
-    if(!$is_super_admin) {
-        $from_branch = $current_branch;
-    }
-    
-    if(empty($from_branch) || empty($to_branch)) {
-        $error = "Please select both source and destination branches.";
-    } elseif($from_branch === $to_branch) {
-        $error = "Source and destination branches cannot be the same.";
-    } elseif(empty($delivered_by)) {
-        $error = "Please enter the name of the person delivering the chargers.";
-    } else {
-        // Check if user has permission to transfer from selected branch
-        if(!$is_super_admin && $from_branch !== $current_branch) {
-            $error = "You can only transfer chargers from your own branch.";
-        } else {
-            // Get chargers available in the source branch
-            $stmt = $conn->prepare("
-                SELECT * 
-                FROM chargers 
-                WHERE branch = ? 
-                AND quantity > 0
-                ORDER BY charger_type, watts, charger_condition
-            ");
-            $stmt->execute([$from_branch]);
-            $foundChargers = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            if(empty($foundChargers)) {
-                $error = "No chargers found in selected branch.";
-            }
-            
-            // Store branch selections and delivered_by in session for transfer
+    if (!$is_super_admin) $from_branch = $user_branch;
+
+    if (empty($from_branch) || empty($to_branch)) $error = "Please select both source and destination branches.";
+    elseif ($from_branch === $to_branch) $error = "Source and destination branches cannot be the same.";
+    elseif (empty($delivered_by)) $error = "Please enter the name of the person delivering the chargers.";
+    elseif (!$is_super_admin && $from_branch !== $user_branch) $error = "You can only transfer chargers from your own branch.";
+    else {
+        $stmt = $conn->prepare("SELECT * FROM chargers WHERE branch = ? AND quantity > 0 ORDER BY charger_type, watts, charger_condition");
+        $stmt->execute([$from_branch]);
+        $foundChargers = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        if (empty($foundChargers)) $error = "No chargers found in selected branch.";
+        else {
             $_SESSION['transfer_from_branch'] = $from_branch;
             $_SESSION['transfer_to_branch'] = $to_branch;
             $_SESSION['delivered_by'] = $delivered_by;
@@ -74,403 +49,237 @@ if(isset($_POST['search_chargers'])) {
     }
 }
 
-// Process chargers transfer
-// Process chargers transfer
-if(isset($_POST['transfer_chargers'])) {
+if (isset($_POST['transfer_chargers'])) {
     $chargers_to_transfer = $_POST['chargers'] ?? [];
     $from_branch = $_SESSION['transfer_from_branch'] ?? null;
     $to_branch = $_SESSION['transfer_to_branch'] ?? null;
     $delivered_by = $_SESSION['delivered_by'] ?? '';
-    
-    // Filter only checked chargers with quantity > 0
     $selectedChargers = [];
-    foreach($chargers_to_transfer as $charger_id => $transfer_data) {
-        // Check if checkbox is checked (selected key exists and equals 1) AND quantity is set and > 0
-        if(isset($transfer_data['selected']) && $transfer_data['selected'] == '1' && isset($transfer_data['quantity'])) {
-            $transfer_quantity = (int)$transfer_data['quantity'];
-            if($transfer_quantity > 0) {
-                $selectedChargers[$charger_id] = $transfer_quantity;
-            }
+    foreach ($chargers_to_transfer as $id => $data) {
+        if (isset($data['selected']) && $data['selected'] == '1' && isset($data['quantity']) && (int)$data['quantity'] > 0) {
+            $selectedChargers[$id] = (int)$data['quantity'];
         }
     }
-    
-    if(empty($selectedChargers)) {
-        $error = "No chargers selected for transfer or quantity is 0.";
-    } elseif(!$from_branch || !$to_branch) {
-        $error = "Branch information missing. Please search again.";
-    } elseif(empty($delivered_by)) {
-        $error = "Delivery information missing. Please search again.";
-    } else {
-        // Check permissions again
-        if(!$is_super_admin && $from_branch !== $current_branch) {
-            $error = "You can only transfer chargers from your own branch.";
-        } else {
-            $transferredItems = 0;
-            $failedItems = 0;
-            $transferDetails = [];
-            $chargerDetails = []; // Store charger details for single log entry
-            
-            // Begin transaction
-            $conn->beginTransaction();
-            
-            try {
-                foreach($selectedChargers as $charger_id => $transfer_quantity) {
-                    // Get charger details from source branch
-                    $stmt = $conn->prepare("
-                        SELECT * 
-                        FROM chargers 
-                        WHERE id = ? 
-                        AND branch = ? 
-                        AND quantity >= ?
-                    ");
-                    $stmt->execute([$charger_id, $from_branch, $transfer_quantity]);
-                    $charger = $stmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    if($charger) {
-                        // Reduce quantity in source branch
-                        $update_source = $conn->prepare("
-                            UPDATE chargers 
-                            SET quantity = quantity - ?, 
-                                updated_by = ?,
-                                date_updated = CURRENT_TIMESTAMP
-                            WHERE id = ? 
-                            AND branch = ?
-                        ");
-                        $update_source->execute([
-                            $transfer_quantity, 
-                            $_SESSION['user_id'],
-                            $charger_id, 
-                            $from_branch
-                        ]);
-                        
-                        // Check if same charger exists in destination branch
-                        $stmt_dest = $conn->prepare("
-                            SELECT * 
-                            FROM chargers 
-                            WHERE charger_type = ? 
-                            AND watts = ? 
-                            AND charger_condition = ? 
-                            AND branch = ?
-                        ");
-                        $stmt_dest->execute([
-                            $charger['charger_type'],
-                            $charger['watts'],
-                            $charger['charger_condition'],
-                            $to_branch
-                        ]);
-                        $existing_charger = $stmt_dest->fetch(PDO::FETCH_ASSOC);
-                        
-                        if($existing_charger) {
-                            // Update quantity in destination branch
-                            $update_dest = $conn->prepare("
-                                UPDATE chargers 
-                                SET quantity = quantity + ?, 
-                                    updated_by = ?,
-                                    date_updated = CURRENT_TIMESTAMP
-                                WHERE id = ?
-                            ");
-                            $update_dest->execute([
-                                $transfer_quantity, 
-                                $_SESSION['user_id'],
-                                $existing_charger['id']
-                            ]);
-                        } else {
-                            // Insert new charger in destination branch
-                            $insert_dest = $conn->prepare("
-                                INSERT INTO chargers 
-                                (charger_type, watts, charger_condition, quantity, branch, updated_by, date_updated) 
-                                VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                            ");
-                            $insert_dest->execute([
-                                $charger['charger_type'],
-                                $charger['watts'],
-                                $charger['charger_condition'],
-                                $transfer_quantity,
-                                $to_branch,
-                                $_SESSION['user_id']
-                            ]);
-                        }
-                        
-                        $transferredItems++;
-                        $transferDetails[] = "{$charger['charger_type']} {$charger['watts']}W ({$charger['charger_condition']}) x{$transfer_quantity}";
-                        $chargerDetails[] = $charger; // Store charger details for logging
+    if (empty($selectedChargers)) $error = "No chargers selected for transfer.";
+    elseif (!$from_branch || !$to_branch) $error = "Branch information missing.";
+    elseif (empty($delivered_by)) $error = "Delivery information missing.";
+    elseif (!$is_super_admin && $from_branch !== $user_branch) $error = "You can only transfer chargers from your own branch.";
+    else {
+        $transferredItems = 0;
+        $transferDetails = [];
+        $conn->beginTransaction();
+        try {
+            foreach ($selectedChargers as $charger_id => $qty) {
+                $stmt = $conn->prepare("SELECT * FROM chargers WHERE id = ? AND branch = ? AND quantity >= ?");
+                $stmt->execute([$charger_id, $from_branch, $qty]);
+                $charger = $stmt->fetch(PDO::FETCH_ASSOC);
+                if ($charger) {
+                    $update = $conn->prepare("UPDATE chargers SET quantity = quantity - ?, updated_by = ?, date_updated = NOW() WHERE id = ? AND branch = ?");
+                    $update->execute([$qty, $user_id, $charger_id, $from_branch]);
+
+                    $dest = $conn->prepare("SELECT id FROM chargers WHERE charger_type = ? AND watts = ? AND charger_condition = ? AND branch = ?");
+                    $dest->execute([$charger['charger_type'], $charger['watts'], $charger['charger_condition'], $to_branch]);
+                    $existing = $dest->fetch(PDO::FETCH_ASSOC);
+                    if ($existing) {
+                        $upd = $conn->prepare("UPDATE chargers SET quantity = quantity + ?, updated_by = ?, date_updated = NOW() WHERE id = ?");
+                        $upd->execute([$qty, $user_id, $existing['id']]);
                     } else {
-                        $failedItems++;
+                        $ins = $conn->prepare("INSERT INTO chargers (charger_type, watts, charger_condition, quantity, branch, updated_by, date_updated) VALUES (?, ?, ?, ?, ?, ?, NOW())");
+                        $ins->execute([$charger['charger_type'], $charger['watts'], $charger['charger_condition'], $qty, $to_branch, $user_id]);
                     }
+                    $transferredItems++;
+                    $transferDetails[] = "{$charger['charger_type']} {$charger['watts']}W ({$charger['charger_condition']}) x{$qty}";
                 }
-                
-                // Commit transaction
-                $conn->commit();
-                
-                if($transferredItems > 0) {
-                    // Create ONE log entry for all transferred chargers
-                    $log = $conn->prepare("
-                        INSERT INTO activity_logs (user_id, action, details) 
-                        VALUES (:uid, 'Transfer chargers', :details)
-                    ");
-                    
-                    // Prepare the log details
-                    $detailsList = implode(', ', $transferDetails);
-                    $totalQuantity = array_sum($selectedChargers);
-                    
-                    $logDetails = "Transferred $transferredItems charger type(s) ($totalQuantity total items) from $from_branch to $to_branch: $detailsList (Delivered by: $delivered_by)";
-                    
-                    $log->execute([
-                        'uid' => $_SESSION['user_id'], 
-                        'details' => $logDetails
-                    ]);
-                    
-                    $success = "$transferredItems charger type(s) ($totalQuantity total items) transferred successfully from $from_branch to $to_branch! (Delivered by: $delivered_by)";
-                    if($failedItems > 0) {
-                        $success .= " $failedItems item(s) could not be transferred.";
-                    }
-                    $foundChargers = [];
-                    
-                    // Clear session data
-                    unset($_SESSION['transfer_from_branch'], $_SESSION['transfer_to_branch'], $_SESSION['delivered_by']);
-                } else {
-                    $error = "No chargers could be transferred.";
-                }
-            } catch (Exception $e) {
-                // Rollback transaction on error
-                $conn->rollBack();
-                $error = "Transfer failed: " . $e->getMessage();
             }
+            $conn->commit();
+            if ($transferredItems > 0) {
+                $log = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'Transfer chargers', ?)");
+                $log->execute([$user_id, "Transferred $transferredItems charger type(s) (" . array_sum($selectedChargers) . " total items) from $from_branch to $to_branch: " . implode(', ', $transferDetails) . " (Delivered by: $delivered_by)"]);
+                $success = "$transferredItems charger type(s) transferred successfully! (Delivered by: $delivered_by)";
+                $foundChargers = [];
+                unset($_SESSION['transfer_from_branch'], $_SESSION['transfer_to_branch'], $_SESSION['delivered_by']);
+            } else $error = "No chargers could be transferred.";
+        } catch (Exception $e) {
+            $conn->rollBack();
+            $error = "Transfer failed: " . $e->getMessage();
         }
     }
 }
-?>
 
+// HTML output – similar structure to other transfer files but with charger‑specific table
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Transfer Chargers</title>
-<style>
-body{font-family:Arial; background:#f4f7f6; padding:20px;}
-.container{width:75%;margin:50px auto;background:#fff;padding:30px;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.1);}
-h2{text-align:center;color:#2f7a3f;margin-bottom:20px;}
-input, select, button, textarea{width:100%; padding:10px; margin-bottom:15px; border-radius:5px; border:1px solid #ccc;}
-button{background:#2f7a3f; color:#fff; border:none; font-weight:bold; cursor:pointer;}
-button:hover{background:#1f5a2d;}
-.error{color:#d32f2f;text-align:center;margin-bottom:15px;}
-.success{color:#2f7a3f;text-align:center;margin-bottom:15px;}
-table{width:100%;border-collapse:collapse;margin-top:20px;}
-th,td{border:1px solid #ccc;padding:8px;text-align:left;}
-th{background:#2f7a3f;color:#fff;}
-tr:nth-child(even){background:#f4f7f6;}
-textarea{width:100%; padding:10px; margin-bottom:15px; border-radius:5px; border:1px solid #ccc; font-family: Arial; resize: vertical;}
-.warning-box{background:#fff3cd; padding:10px; border-left:4px solid #ffc107; margin-bottom:15px; border-radius:4px;}
-.checkbox-cell{text-align:center;}
-.branch-selector{display:flex; gap:15px; margin-bottom:20px;}
-.branch-selector div{flex:1;}
-.branch-selector label{display:block; margin-bottom:5px; font-weight:bold; color:black;}
-.branch-note{margin-top:-10px; margin-bottom:15px; color:#666; font-size:0.9em;}
-.delivery-info{margin-bottom:20px;}
-.delivery-info label{display:block; margin-bottom:5px; font-weight:bold; color:black;}
-.details-table th {width: 20%;}
-.details-table td {width: 30%;}
-.quantity-input {width: 80px; text-align: center;}
-.charger-details {font-size: 0.9em; color: #666;}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Transfer Chargers | Mombasa Computers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Same CSS as transfer_device.php – reuse */
+        :root { --primary: #1a4b2a; --primary-light: #2a6b3a; --primary-dark: #0f3a1e; --info: #2563eb; --gray-50: #f9fafb; --gray-100: #f3f4f6; --gray-200: #e5e7eb; --gray-300: #d1d5db; --gray-400: #9ca3af; --gray-500: #6b7280; --gray-600: #4b5563; --gray-700: #374151; --gray-800: #1f2937; --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05); --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1); --radius-sm: 0.375rem; --radius-md: 0.5rem; --radius-lg: 0.75rem; --radius-xl: 1rem; --font-sans: 'Inter', system-ui, sans-serif; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-sans); background: var(--gray-100); color: var(--gray-800); line-height: 1.5; overflow-x: hidden; }
+        .main-content { padding: 2rem 2rem 1rem; margin-left: 260px; width: calc(100% - 260px); min-height: 100vh; background: var(--gray-100); transition: all 0.3s ease; }
+        .page-header { background: white; padding: 1.5rem 2rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; box-shadow: var(--shadow-sm); border: 1px solid var(--gray-200); }
+        .page-header h1 { font-size: 1.75rem; color: var(--gray-800); font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .breadcrumb { color: var(--gray-500); font-size: 0.9rem; }
+        .breadcrumb a { color: var(--primary); text-decoration: none; }
+        .form-container { max-width: 900px; margin: 0 auto; }
+        .card { background: white; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); overflow: hidden; box-shadow: var(--shadow-sm); margin-bottom: 1.5rem; }
+        .card-header { background: var(--gray-50); padding: 1rem 1.5rem; border-bottom: 1px solid var(--gray-200); }
+        .card-header h2 { font-size: 1.25rem; font-weight: 600; color: var(--gray-800); display: flex; align-items: center; gap: 0.5rem; }
+        .card-body { padding: 1.5rem; }
+        .branch-selector { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; }
+        .branch-selector div { flex: 1; min-width: 180px; }
+        .form-group { margin-bottom: 1rem; }
+        label { display: block; font-size: 0.875rem; font-weight: 500; color: var(--gray-700); margin-bottom: 0.25rem; }
+        input, select { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); font-size: 0.9rem; background: white; }
+        button { background: var(--primary); color: white; border: none; border-radius: var(--radius-md); padding: 0.6rem 1.2rem; cursor: pointer; font-weight: 500; display: inline-flex; align-items: center; gap: 0.5rem; }
+        button:hover { background: var(--primary-light); }
+        .error { background: #fee2e2; border-left: 4px solid #dc2626; padding: 0.75rem 1rem; border-radius: var(--radius-md); margin-bottom: 1rem; color: #991b1b; }
+        .success { background: #d1fae5; border-left: 4px solid #10b981; padding: 0.75rem 1rem; border-radius: var(--radius-md); margin-bottom: 1rem; color: #065f46; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid var(--gray-200); padding: 0.5rem; text-align: left; }
+        th { background: var(--gray-50); }
+        .checkbox-cell { text-align: center; }
+        .quantity-input { width: 80px; text-align: center; }
+        .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
+        @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
+        @media (max-width: 768px) { .branch-selector { flex-direction: column; } button { width: 100%; justify-content: center; } }
+    </style>
+</head>
+<body>
+<div class="main-content">
+    <div class="page-header">
+        <h1><i class="fas fa-bolt"></i> Transfer Chargers</h1>
+        <div class="breadcrumb">
+            <?php if ($user_role === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php">Dashboard</a>
+            <?php elseif ($user_role === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php">Dashboard</a>
+            <?php else: ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php">Dashboard</a>
+            <?php endif; ?>
+            <span> / </span>
+            <a href="index.php">Transfers</a>
+            <span> / </span>
+            <span>Transfer Chargers</span>
+        </div>
+    </div>
+
+    <div class="form-container">
+        <?php if ($error): ?><div class="error"><i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?></div><?php endif; ?>
+        <?php if ($success): ?><div class="success"><i class="fas fa-check-circle"></i> <?= htmlspecialchars($success) ?></div><?php endif; ?>
+
+        <form method="POST">
+            <div class="card">
+                <div class="card-header"><h2><i class="fas fa-info-circle"></i> Transfer Details</h2></div>
+                <div class="card-body">
+                    <div class="branch-selector">
+                        <div>
+                            <label>Transfer From:</label>
+                            <select name="from_branch" <?= !$is_super_admin ? 'disabled' : '' ?> required>
+                                <option value="">Select Source Branch</option>
+                                <?php foreach ($availableBranches as $branch): ?>
+                                    <?php if ($is_super_admin || $branch == $user_branch): ?>
+                                        <option value="<?= $branch ?>" <?= (!$is_super_admin && $branch == $user_branch) ? 'selected' : '' ?>><?= $branch ?></option>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php if (!$is_super_admin): ?>
+                                <input type="hidden" name="from_branch" value="<?= htmlspecialchars($user_branch) ?>">
+                                <small>You can only transfer from your branch: <strong><?= htmlspecialchars($user_branch) ?></strong></small>
+                            <?php endif; ?>
+                        </div>
+                        <div>
+                            <label>Transfer To:</label>
+                            <select name="to_branch" required>
+                                <option value="">Select Destination Branch</option>
+                                <?php foreach ($availableBranches as $branch): ?>
+                                    <?php if ($is_super_admin || $branch != $user_branch): ?>
+                                        <option value="<?= $branch ?>"><?= $branch ?></option>
+                                    <?php endif; ?>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>Delivered By (Person's Name):</label>
+                        <input type="text" name="delivered_by" required placeholder="Enter name" value="<?= htmlspecialchars($_SESSION['delivered_by'] ?? '') ?>">
+                    </div>
+                    <button type="submit" name="search_chargers"><i class="fas fa-search"></i> Search Chargers</button>
+                </div>
+            </div>
+        </form>
+
+        <?php if (!empty($foundChargers)): ?>
+            <form method="POST" id="transferForm">
+                <div class="card">
+                    <div class="card-header"><h2><i class="fas fa-list"></i> Available Chargers in <?= htmlspecialchars($_SESSION['transfer_from_branch'] ?? '') ?></h2></div>
+                    <div class="card-body">
+                        <p><strong>Transferring to:</strong> <?= htmlspecialchars($_SESSION['transfer_to_branch'] ?? '') ?></p>
+                        <p><strong>Delivered by:</strong> <?= htmlspecialchars($_SESSION['delivered_by'] ?? '') ?></p>
+                        <p><label><input type="checkbox" id="selectAll" onclick="selectAllCheckboxes(this)"> Select All</label></p>
+                        <table>
+                            <thead><tr><th class="checkbox-cell">Select</th><th>Type</th><th>Watts</th><th>Condition</th><th>Available</th><th>Qty to Transfer</th></tr></thead>
+                            <tbody>
+                            <?php foreach ($foundChargers as $charger): ?>
+                                <tr>
+                                    <td class="checkbox-cell"><input type="checkbox" name="chargers[<?= $charger['id'] ?>][selected]" value="1" onchange="toggleQuantityInput(this)" id="ch_<?= $charger['id'] ?>"></td>
+                                    <td><label for="ch_<?= $charger['id'] ?>"><?= htmlspecialchars($charger['charger_type']) ?></label></td>
+                                    <td><?= $charger['watts'] ?>W</td>
+                                    <td><?= htmlspecialchars($charger['charger_condition']) ?></td>
+                                    <td><?= $charger['quantity'] ?></td>
+                                    <td>
+                                        <input type="hidden" name="chargers[<?= $charger['id'] ?>][max]" value="<?= $charger['quantity'] ?>">
+                                        <input type="number" name="chargers[<?= $charger['id'] ?>][quantity]" class="quantity-input" min="1" max="<?= $charger['quantity'] ?>" value="0" disabled onchange="validateQuantity(this)">
+                                        <small>Max: <?= $charger['quantity'] ?></small>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                        <button type="submit" name="transfer_chargers"><i class="fas fa-arrow-right"></i> Transfer Selected</button>
+                    </div>
+                </div>
+            </form>
+        <?php endif; ?>
+    </div>
+    <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
+</div>
 <script>
-// Select all checkboxes
 function selectAllCheckboxes(source) {
-    document.querySelectorAll('input[name^="chargers["]').forEach(cb => {
-        if(cb.type === 'checkbox') {
-            cb.checked = source.checked;
-            // Enable quantity input if checkbox is checked
-            const row = cb.closest('tr');
-            const quantityInput = row.querySelector('.quantity-input');
-            if(quantityInput) {
-                quantityInput.disabled = !cb.checked;
-                if(cb.checked && quantityInput.value === '0') {
-                    quantityInput.value = '1';
-                }
-            }
+    document.querySelectorAll('input[name^="chargers["][type="checkbox"]').forEach(cb => {
+        cb.checked = source.checked;
+        const row = cb.closest('tr');
+        const qtyInput = row.querySelector('.quantity-input');
+        if (qtyInput) {
+            qtyInput.disabled = !cb.checked;
+            if (cb.checked && qtyInput.value === '0') qtyInput.value = '1';
+            else if (!cb.checked) qtyInput.value = '0';
         }
     });
 }
-
-// Enable/disable quantity input when checkbox is toggled
 function toggleQuantityInput(checkbox) {
     const row = checkbox.closest('tr');
-    const quantityInput = row.querySelector('.quantity-input');
-    if(quantityInput) {
-        quantityInput.disabled = !checkbox.checked;
-        if(checkbox.checked && quantityInput.value === '0') {
-            quantityInput.value = '1';
-        } else if(!checkbox.checked) {
-            quantityInput.value = '0';
-        }
+    const qtyInput = row.querySelector('.quantity-input');
+    if (qtyInput) {
+        qtyInput.disabled = !checkbox.checked;
+        if (checkbox.checked && qtyInput.value === '0') qtyInput.value = '1';
+        else if (!checkbox.checked) qtyInput.value = '0';
     }
 }
-
-// Validate quantity input
 function validateQuantity(input) {
     const row = input.closest('tr');
-    const maxQuantity = parseInt(row.querySelector('.max-quantity').value);
-    const value = parseInt(input.value);
-    
-    if(isNaN(value) || value < 1) {
-        input.value = '1';
-        alert('Quantity must be at least 1');
-    } else if(value > maxQuantity) {
-        input.value = maxQuantity;
-        alert(`Maximum available quantity is ${maxQuantity}`);
-    }
+    const max = parseInt(row.querySelector('input[name$="[max]"]').value);
+    let val = parseInt(input.value);
+    if (isNaN(val) || val < 1) val = 1;
+    if (val > max) val = max;
+    input.value = val;
 }
-
-// Update branch dropdowns based on user role
-document.addEventListener('DOMContentLoaded', function() {
-    const fromBranchSelect = document.querySelector('select[name="from_branch"]');
-    const toBranchSelect = document.querySelector('select[name="to_branch"]');
-    const deliveredByInput = document.querySelector('input[name="delivered_by"]');
-    const isSuperAdmin = <?= $is_super_admin ? 'true' : 'false' ?>;
-    const currentBranch = '<?= addslashes($current_branch) ?>';
-    
-    // Focus on delivered_by field if it exists
-    if(deliveredByInput) {
-        deliveredByInput.focus();
-    }
-    
-    if(!isSuperAdmin && currentBranch) {
-        // Set from_branch to current branch and disable it
-        if(fromBranchSelect) {
-            fromBranchSelect.value = currentBranch;
-            fromBranchSelect.disabled = true;
-            
-            // Also set a hidden input with the same value to ensure it gets posted
-            const hiddenInput = document.createElement('input');
-            hiddenInput.type = 'hidden';
-            hiddenInput.name = 'from_branch';
-            hiddenInput.value = currentBranch;
-            fromBranchSelect.parentNode.appendChild(hiddenInput);
-        }
-        
-        // Filter destination branches to exclude current branch
-        if(toBranchSelect) {
-            const options = toBranchSelect.options;
-            for(let i = options.length - 1; i >= 0; i--) {
-                if(options[i].value === currentBranch) {
-                    toBranchSelect.remove(i);
-                }
-            }
-            
-            // Auto-select first option if only one remains
-            if(toBranchSelect.options.length === 2) { // 1 option + "Select Destination Branch"
-                toBranchSelect.selectedIndex = 1;
-            }
-        }
-    }
-});
 </script>
-</head>
-<body>
-<div class="container">
-
-<a href="/inventory_system/dashboard/index.php" style="background:#007bff;color:white;padding:8px 12px;border-radius:5px;text-decoration:none;">Dashboard</a>
-
-<h2>Transfer Chargers</h2>
-
-<?php if($error): ?><div class="error"><?= $error ?></div><?php endif; ?>
-<?php if($success): ?><div class="success"><?= $success ?></div><?php endif; ?>
-
-<form method="POST" id="searchForm">
-    <div class="branch-selector">
-        <div>
-            <label for="from_branch">Transfer From:</label>
-            <select name="from_branch" id="from_branch" required <?= !$is_super_admin ? 'disabled' : '' ?>>
-                <option value="">Select Source Branch</option>
-                <?php foreach($availableBranches as $branch): ?>
-                    <?php if($is_super_admin || $branch == $current_branch): ?>
-                        <option value="<?= htmlspecialchars($branch) ?>" <?= (!$is_super_admin && $branch == $current_branch) ? 'selected' : (isset($_POST['from_branch']) && $_POST['from_branch'] == $branch ? 'selected' : '') ?>>
-                            <?= htmlspecialchars($branch) ?>
-                        </option>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-            </select>
-            <?php if(!$is_super_admin): ?>
-                <div class="branch-note">You can only transfer chargers from: <strong><?= htmlspecialchars($current_branch) ?></strong></div>
-                <!-- Hidden input to ensure branch value is posted even when select is disabled -->
-                <input type="hidden" name="from_branch" value="<?= htmlspecialchars($current_branch) ?>">
-            <?php endif; ?>
-        </div>
-        
-        <div>
-            <label for="to_branch">Transfer To:</label>
-            <select name="to_branch" id="to_branch" required>
-                <option value="">Select Destination Branch</option>
-                <?php foreach($availableBranches as $branch): ?>
-                    <?php if($is_super_admin || $branch != $current_branch): ?>
-                        <option value="<?= htmlspecialchars($branch) ?>" <?= isset($_POST['to_branch']) && $_POST['to_branch'] == $branch ? 'selected' : '' ?>>
-                            <?= htmlspecialchars($branch) ?>
-                        </option>
-                    <?php endif; ?>
-                <?php endforeach; ?>
-            </select>
-            <?php if(!$is_super_admin): ?>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <div class="delivery-info">
-        <label for="delivered_by">Delivered By (Person's Name):</label>
-        <input type="text" name="delivered_by" id="delivered_by" placeholder="Enter the name of person delivering chargers" value="<?= isset($_POST['delivered_by']) ? htmlspecialchars($_POST['delivered_by']) : (isset($_SESSION['delivered_by']) ? htmlspecialchars($_SESSION['delivered_by']) : '') ?>" required>
-    </div>
-
-    <button type="submit" name="search_chargers">Search Available Chargers</button>
-</form>
-
-<?php if(!empty($foundChargers)): ?>
-<form method="POST" id="transferForm">
-    <h3>Available Chargers in <?= htmlspecialchars($_SESSION['transfer_from_branch'] ?? '') ?> - Ready to Transfer to <?= htmlspecialchars($_SESSION['transfer_to_branch'] ?? '') ?></h3>
-    <?php if(isset($_SESSION['delivered_by'])): ?>
-        <p><strong>Delivered by:</strong> <?= htmlspecialchars($_SESSION['delivered_by']) ?></p>
-    <?php endif; ?>
-    
-    <p><input type="checkbox" id="selectAll" onchange="selectAllCheckboxes(this)"> <label for="selectAll">Select All</label></p>
-    <table>
-        <tr>
-            <th class="checkbox-cell">Select</th>
-            <th>Charger Type</th>
-            <th>Watts</th>
-            <th>Condition</th>
-            <th>Available Quantity</th>
-            <th>Quantity to Transfer</th>
-        </tr>
-        <?php foreach($foundChargers as $charger): ?>
-        <tr>
-            <td class="checkbox-cell">
-                <input type="checkbox" 
-                       name="chargers[<?= $charger['id'] ?>][selected]" 
-                       value="1" 
-                       onchange="toggleQuantityInput(this)"
-                       id="charger_<?= $charger['id'] ?>">
-            </td>
-            <td><label for="charger_<?= $charger['id'] ?>"><?= htmlspecialchars($charger['charger_type']) ?></label></td>
-            <td><?= htmlspecialchars($charger['watts']) ?>W</td>
-            <td><?= htmlspecialchars($charger['charger_condition']) ?></td>
-            <td><?= htmlspecialchars($charger['quantity']) ?></td>
-            <td>
-                <input type="hidden" name="chargers[<?= $charger['id'] ?>][max]" class="max-quantity" value="<?= $charger['quantity'] ?>">
-                <input type="number" 
-                       name="chargers[<?= $charger['id'] ?>][quantity]" 
-                       class="quantity-input" 
-                       min="1" 
-                       max="<?= $charger['quantity'] ?>" 
-                       value="0" 
-                       disabled
-                       onchange="validateQuantity(this)">
-                <div class="charger-details">Max: <?= $charger['quantity'] ?></div>
-            </td>
-        </tr>
-        <?php endforeach; ?>
-    </table>
-    <button type="submit" name="transfer_chargers">Transfer Selected Chargers</button>
-</form>
-<?php endif; ?>
-
-</div>
+<?php require_once "../includes/footer.php"; ?>
 </body>
 </html>

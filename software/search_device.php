@@ -3,8 +3,8 @@ session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 
-// Only maintenance role can access
-if ($_SESSION['role'] !== 'maintenance') {
+// Only software role can access
+if ($_SESSION['role'] !== 'software') {
     die("Access denied!");
 }
 

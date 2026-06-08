@@ -3,8 +3,8 @@ session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 
-// Allowed roles: maintenance, super_admin, inventory_admin
-if (!in_array($_SESSION['role'], ['maintenance', 'super_admin', 'inventory_admin', 'manager'])) {
+// Allowed roles: software, super_admin, inventory_admin
+if (!in_array($_SESSION['role'], ['software', 'super_admin', 'inventory_admin', 'manager'])) {
     die("Access denied!");
 }
 
@@ -27,8 +27,8 @@ $sql = "SELECT m.*, d.model_name, d.storage_type, d.storage_capacity, c.category
         LEFT JOIN users u ON m.performed_by = u.id
         WHERE 1";
 
-if ($role === 'maintenance') {
-    // show only logs performed by that maintenance person
+if ($role === 'software') {
+    // show only logs performed by that software person
     $sql .= " AND m.performed_by = :performed_by";
     $params['performed_by'] = $user_id;
 }

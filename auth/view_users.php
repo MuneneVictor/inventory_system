@@ -1,5 +1,53 @@
 <?php
 session_start();
+
+// ========== HANDLE TOGGLE USER STATUS (Restrict/Activate) ==========
+// Must be at the very top, before any output
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_user_id']) && isset($_POST['toggle_action'])) {
+    require_once "../config/db.php";
+    
+    $toggle_id = (int)$_POST['toggle_user_id'];
+    $toggle_action = $_POST['toggle_action'];
+    
+    // Prevent self toggle
+    if ($toggle_id == $_SESSION['user_id']) {
+        $_SESSION['error'] = "You cannot change your own status.";
+        header("Location: view_users.php");
+        exit();
+    }
+    
+    $new_status = ($toggle_action === 'activate') ? 1 : 0;
+    
+    try {
+        $stmt = $conn->prepare("UPDATE users SET is_active = :status WHERE id = :id");
+        $stmt->execute(['status' => $new_status, 'id' => $toggle_id]);
+        
+        // Log activity
+        $action_text = ($new_status == 1) ? "activated" : "restricted";
+        $logStmt = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (:uid, :action, :details)");
+        $logStmt->execute([
+            'uid' => $_SESSION['user_id'],
+            'action' => 'User Status Change',
+            'details' => "User ID $toggle_id has been $action_text by " . ($_SESSION['full_name'] ?? $_SESSION['name'] ?? 'Admin')
+        ]);
+        
+        $_SESSION['success'] = "User status updated successfully.";
+    } catch (Exception $e) {
+        $_SESSION['error'] = "Database error: " . $e->getMessage();
+    }
+    
+    // Preserve filters when redirecting
+    $query_params = [];
+    if (!empty($_GET['branch'])) $query_params['branch'] = $_GET['branch'];
+    if (!empty($_GET['role'])) $query_params['role'] = $_GET['role'];
+    if (!empty($_GET['status'])) $query_params['status'] = $_GET['status'];
+    $redirect_url = "view_users.php" . (empty($query_params) ? "" : "?" . http_build_query($query_params));
+    
+    header("Location: " . $redirect_url);
+    exit();
+}
+
+// ========== NORMAL PAGE LOAD ==========
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 require_once "../includes/header.php";
@@ -62,6 +110,11 @@ $roles = safeQuery($conn, "SELECT DISTINCT role FROM users ORDER BY role ASC");
 $total_users = count($users);
 $active_users = count(array_filter($users, fn($u) => $u['is_active'] == 1));
 $inactive_users = $total_users - $active_users;
+
+// Display success/error messages (from session)
+$success_msg = $_SESSION['success'] ?? '';
+$error_msg = $_SESSION['error'] ?? '';
+unset($_SESSION['success'], $_SESSION['error']);
 ?>
 
 <!DOCTYPE html>
@@ -72,6 +125,7 @@ $inactive_users = $total_users - $active_users;
     <title>View Users | Mombasa Computers</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        /* Your existing CSS (unchanged) */
         :root {
             --primary: #1a4b2a;
             --primary-light: #2a6b3a;
@@ -110,7 +164,6 @@ $inactive_users = $total_users - $active_users;
             overflow-x: hidden;
         }
 
-        /* Main Content Area */
         .main-content {
             padding: 2rem 2rem 1rem;
             margin-left: 260px;
@@ -122,7 +175,6 @@ $inactive_users = $total_users - $active_users;
             max-width: 100%;
         }
 
-        /* Page Header */
         .page-header {
             background: white;
             padding: 1.5rem 2rem;
@@ -157,11 +209,27 @@ $inactive_users = $total_users - $active_users;
             text-decoration: none;
         }
 
-        .breadcrumb a:hover {
-            text-decoration: underline;
+        .alert {
+            padding: 1rem 1.25rem;
+            border-radius: var(--radius-md);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
         }
 
-        /* Stats Cards */
+        .alert-success {
+            background: #ecfdf5;
+            border: 1px solid #a7f3d0;
+            color: #065f46;
+        }
+
+        .alert-error {
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            color: #991b1b;
+        }
+
         .stats-row {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -201,7 +269,6 @@ $inactive_users = $total_users - $active_users;
             margin-top: 0.25rem;
         }
 
-        /* Search Section */
         .search-section {
             background: white;
             padding: 1.5rem;
@@ -261,7 +328,6 @@ $inactive_users = $total_users - $active_users;
             gap: 0.75rem;
         }
 
-        /* Buttons */
         .btn {
             padding: 0.625rem 1.25rem;
             border: none;
@@ -305,12 +371,20 @@ $inactive_users = $total_users - $active_users;
             background: #b91c1c;
         }
 
+        .btn-success {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-success:hover {
+            background: #059669;
+        }
+
         .btn-sm {
             padding: 0.375rem 0.875rem;
             font-size: 0.8rem;
         }
 
-        /* Table Styles */
         .table-wrapper {
             background: white;
             border-radius: var(--radius-xl);
@@ -357,7 +431,6 @@ $inactive_users = $total_users - $active_users;
             border-bottom: none;
         }
 
-        /* Badge Styles */
         .badge {
             display: inline-block;
             padding: 0.25rem 0.625rem;
@@ -386,7 +459,7 @@ $inactive_users = $total_users - $active_users;
             color: white;
         }
 
-        .badge-maintenance {
+        .badge-software {
             background: #8b5cf6;
             color: white;
         }
@@ -406,7 +479,6 @@ $inactive_users = $total_users - $active_users;
             color: white;
         }
 
-        /* Branch colors */
         .branch-kimathi {
             color: #059669;
             font-weight: 500;
@@ -417,14 +489,12 @@ $inactive_users = $total_users - $active_users;
             font-weight: 500;
         }
 
-        /* Action buttons */
         .action-buttons {
             display: flex;
             gap: 0.5rem;
             flex-wrap: wrap;
         }
 
-        /* Empty state */
         .empty-state {
             text-align: center;
             padding: 3rem;
@@ -437,7 +507,6 @@ $inactive_users = $total_users - $active_users;
             opacity: 0.5;
         }
 
-        /* Footer */
         .footer {
             text-align: center;
             padding: 1.5rem 0 0.5rem;
@@ -447,7 +516,6 @@ $inactive_users = $total_users - $active_users;
             border-top: 1px solid var(--gray-200);
         }
 
-        /* Responsive */
         @media (max-width: 1200px) {
             .main-content {
                 margin-left: 0 !important;
@@ -532,20 +600,32 @@ $inactive_users = $total_users - $active_users;
 <body>
 
 <div class="main-content">
-    <!-- Page Header -->
     <div class="page-header">
         <h1>
             <i class="fas fa-users"></i>
             User Management
         </h1>
         <div class="breadcrumb">
-            <a href="/inventory_system/dashboard/index.php"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="/inventory_system/dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
             <span> / </span>
             <span>View Users</span>
         </div>
     </div>
 
-    <!-- Stats Cards -->
+    <?php if ($success_msg): ?>
+        <div class="alert alert-success">
+            <i class="fas fa-check-circle"></i>
+            <span><?= htmlspecialchars($success_msg) ?></span>
+        </div>
+    <?php endif; ?>
+    
+    <?php if ($error_msg): ?>
+        <div class="alert alert-error">
+            <i class="fas fa-exclamation-circle"></i>
+            <span><?= htmlspecialchars($error_msg) ?></span>
+        </div>
+    <?php endif; ?>
+
     <div class="stats-row">
         <div class="stat-card">
             <div class="stat-icon"><i class="fas fa-users"></i></div>
@@ -569,7 +649,6 @@ $inactive_users = $total_users - $active_users;
         </div>
     </div>
 
-    <!-- Filters Section -->
     <div class="search-section">
         <div class="search-title">
             <i class="fas fa-filter"></i> Filter Users
@@ -596,6 +675,7 @@ $inactive_users = $total_users - $active_users;
                             <?php 
                                 $display = ucfirst(str_replace('_', ' ', $r['role']));
                                 if ($r['role'] === 'maintenance') $display = 'Software';
+                                if ($r['role'] === 'software') $display = 'Software';
                                 if ($r['role'] === 'inventory_admin') $display = 'Inventory Admin';
                                 echo htmlspecialchars($display);
                             ?>
@@ -627,7 +707,6 @@ $inactive_users = $total_users - $active_users;
         </form>
     </div>
 
-    <!-- Users Table -->
     <div class="table-wrapper">
         <div class="table-responsive">
             <?php if (empty($users)): ?>
@@ -639,6 +718,10 @@ $inactive_users = $total_users - $active_users;
                     </a>
                 </div>
             <?php else: ?>
+                <form method="POST" id="toggleForm" style="display: none;">
+                    <input type="hidden" name="toggle_user_id" id="toggle_user_id">
+                    <input type="hidden" name="toggle_action" id="toggle_action">
+                </form>
                 <table>
                     <thead>
                         <tr>
@@ -680,7 +763,8 @@ $inactive_users = $total_users - $active_users;
                                         $role_display = 'Technician';
                                         break;
                                     case 'maintenance':
-                                        $role_class = 'badge-maintenance';
+                                    case 'software':
+                                        $role_class = 'badge-software';
                                         $role_display = 'Software';
                                         break;
                                     case 'manager':
@@ -715,7 +799,18 @@ $inactive_users = $total_users - $active_users;
                                         <i class="fas fa-edit"></i> Edit
                                     </a>
                                     <?php if ($u['id'] != $_SESSION['user_id']): ?>
-                                        <button type="button" class="btn btn-danger btn-sm" onclick="confirmReset(<?= $u['id'] ?>, '<?= htmlspecialchars($u['full_name']) ?>')">
+                                        <?php if ($u['is_active'] == 1): ?>
+                                            <!-- Show RESTRICT button (red) for active users -->
+                                            <button type="button" class="btn btn-danger btn-sm" onclick="toggleUserStatus(<?= $u['id'] ?>, '<?= htmlspecialchars($u['full_name']) ?>', 'restrict')">
+                                                <i class="fas fa-ban"></i> Restrict
+                                            </button>
+                                        <?php else: ?>
+                                            <!-- Show ACTIVATE button (green) for inactive users -->
+                                            <button type="button" class="btn btn-success btn-sm" onclick="toggleUserStatus(<?= $u['id'] ?>, '<?= htmlspecialchars($u['full_name']) ?>', 'activate')">
+                                                <i class="fas fa-check-circle"></i> Activate
+                                            </button>
+                                        <?php endif; ?>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="confirmReset(<?= $u['id'] ?>, '<?= htmlspecialchars($u['full_name']) ?>')">
                                             <i class="fas fa-sync-alt"></i> Reset
                                         </button>
                                     <?php endif; ?>
@@ -753,18 +848,32 @@ document.addEventListener('DOMContentLoaded', function() {
 // Confirm password reset
 function confirmReset(userId, userName) {
     if (confirm(`Are you sure you want to reset the password for "${userName}"?`)) {
-        // Create a form and submit via POST
         const form = document.createElement('form');
         form.method = 'POST';
         form.action = 'reset_password.php';
-        
         const input = document.createElement('input');
         input.type = 'hidden';
         input.name = 'user_id';
         input.value = userId;
-        
         form.appendChild(input);
         document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Toggle user status (Restrict/Activate) – submits to same page
+function toggleUserStatus(userId, userName, action) {
+    let confirmMsg = '';
+    if (action === 'restrict') {
+        confirmMsg = `Are you sure you want to RESTRICT "${userName}"? They will no longer be able to log in.`;
+    } else {
+        confirmMsg = `Are you sure you want to ACTIVATE "${userName}"? They will be able to log in again.`;
+    }
+    
+    if (confirm(confirmMsg)) {
+        const form = document.getElementById('toggleForm');
+        document.getElementById('toggle_user_id').value = userId;
+        document.getElementById('toggle_action').value = action;
         form.submit();
     }
 }

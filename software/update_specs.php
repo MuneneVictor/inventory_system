@@ -3,8 +3,8 @@ session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 
-// Access: maintenance and inventory_admin
-if (!in_array($_SESSION['role'], ['maintenance', 'inventory_admin'])) {
+// Access: software and inventory_admin
+if (!in_array($_SESSION['role'], ['software', 'inventory_admin'])) {
     die("Access denied!");
 }
 

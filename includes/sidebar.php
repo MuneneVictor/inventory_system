@@ -213,20 +213,8 @@ require_once "../includes/auth_check.php";
             <!-- Transfers Section -->
             <?php if(in_array($role, ['super_admin','manager','inventory_admin'])): ?>
                 <div class="menu-section">TRANSFERS</div>
-                <a href="/inventory_system/transfers/transfer_device.php" class="menu-item">
-                    <i class="fas fa-exchange-alt"></i> Transfer Device
-                </a>
-                <a href="/inventory_system/transfers/transfer_monitor.php" class="menu-item">
-                    <i class="fas fa-exchange-alt"></i> Transfer Monitor
-                </a>
-                <a href="/inventory_system/transfers/transfer_printer.php" class="menu-item">
-                    <i class="fas fa-exchange-alt"></i> Transfer Printer
-                </a>
-                <a href="/inventory_system/transfers/transfer_charger.php" class="menu-item">
-                    <i class="fas fa-exchange-alt"></i> Transfer Charger
-                </a>
-                <a href="/inventory_system/transfers/transfer_ram_ssd.php" class="menu-item">
-                    <i class="fas fa-exchange-alt"></i> Transfer RAM/SSD
+                <a href="/inventory_system/transfers/index.php" class="menu-item">
+                    <i class="fas fa-exchange-alt"></i> Make Transfer
                 </a>
                 <a href="/inventory_system/transfers/transfer_logs.php" class="menu-item">
                     <i class="fas fa-clipboard-list"></i> Transfer Logs
