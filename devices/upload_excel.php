@@ -46,7 +46,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
             $rows = $sheet->toArray();
 
             // Assume first row is header
-            $header = array_map(fn($h) => strtolower(trim($h ?? '')), $rows[0]);
+            $header = array_map(function($h) {
+                return strtolower(trim($h ?? ''));
+            }, $rows[0]);
             unset($rows[0]);
 
             // Check required columns
@@ -71,20 +73,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                 // Fetch all categories once for performance
                 $catStmt = $conn->prepare("SELECT id, category_name FROM categories");
                 $catStmt->execute();
-                $categories = $catStmt->fetchAll(PDO::FETCH_KEY_PAIR); // Returns [category_name => id]
+                $categoriesRaw = $catStmt->fetchAll(PDO::FETCH_ASSOC);
+                
+                // Build mapping: original name -> id AND lowercase name -> id
+                $catMap = [];
+                $catLowerMap = [];
+                foreach ($categoriesRaw as $cat) {
+                    $original = trim($cat['category_name']);
+                    $lower = strtolower($original);
+                    $catMap[$original] = $cat['id'];
+                    $catLowerMap[$lower] = $cat['id'];
+                }
 
                 foreach ($rows as $rowIndex => $row) {
-                    $data = array_combine($header, $row);
+                    // Ensure row has same number of columns as header
+                    $rowPadded = array_pad($row, count($header), '');
+                    $data = array_combine($header, $rowPadded);
                     $rowNumber = $rowIndex + 2; // For error reporting (1-indexed, +1 for header)
 
                     // Validate required fields
                     $serial_number = trim($data['serial_number']);
-                    $category_name = trim($data['category']);
+                    $category_name_raw = trim($data['category']);
                     $model_name = trim($data['model_name']);
                     $processor = trim($data['processor']);
                     $ram = (int)$data['ram'];
                     $storage_type = strtoupper(trim($data['storage_type']));
                     $storage_capacity = (int)$data['storage_capacity'];
+                    
+                    // Normalize category name: remove extra spaces, handle case‑insensitivity
+                    $category_name_normalized = trim($category_name_raw);
+                    $category_lower = strtolower($category_name_normalized);
+                    
+                    // Try to find category ID: first exact match, then case‑insensitive
+                    $category_id = null;
+                    if (isset($catMap[$category_name_normalized])) {
+                        $category_id = $catMap[$category_name_normalized];
+                    } elseif (isset($catLowerMap[$category_lower])) {
+                        $category_id = $catLowerMap[$category_lower];
+                        // Optionally log that we used case‑insensitive match
+                        error_log("Category '$category_name_raw' matched to '" . array_search($category_id, $catMap) . "' via case‑insensitive lookup.");
+                    }
                     
                     // Validate data types and ranges
                     $rowErrors = [];
@@ -93,8 +121,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                         $rowErrors[] = "Serial number is empty";
                     }
                     
-                    if (empty($category_name)) {
+                    if (empty($category_name_raw)) {
                         $rowErrors[] = "Category is empty";
+                    } elseif (!$category_id) {
+                        $rowErrors[] = "Category '$category_name_raw' not found in database. Available: " . implode(', ', array_keys($catMap));
                     }
                     
                     if (empty($model_name)) {
@@ -146,15 +176,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                         $invalidDataErrors[] = "Row $rowNumber (SN: $serial_number): " . implode(', ', $rowErrors);
                         continue;
                     }
-
-                    // Check if category exists
-                    if (!isset($categories[$category_name])) {
-                        $invalidCategoryCount++;
-                        $skippedSerials[] = $serial_number;
-                        continue;
-                    }
-
-                    $category_id = $categories[$category_name];
 
                     // Check for duplicate serial number
                     $stmt = $conn->prepare("SELECT serial_number FROM devices WHERE serial_number = :serial");
@@ -230,6 +251,7 @@ $allCategories = $catStmt->fetchAll(PDO::FETCH_COLUMN);
     <title>Bulk Upload Devices | Mombasa Computers</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
+        /* Your existing CSS (unchanged) */
         :root {
             --primary: #1a4b2a;
             --primary-light: #2a6b3a;

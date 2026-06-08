@@ -3,7 +3,7 @@
 $host = "localhost";     // your server
 $dbname = "inventory_system";  // your database name
 $username = "root";      // your MySQL username
-$password = "@MUNENEVDEB20";          // your MySQL password
+$password = "@MUNENE";          // your MySQL password
 
 try {
     // Create PDO instance
