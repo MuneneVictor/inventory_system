@@ -2,8 +2,8 @@
 // Database connection settings
 $host = "localhost";     // your server
 $dbname = "inventory_system";  // your database name
-$username = "root";      // your MySQL username
-$password = "@MUNENE";          // your MySQL password
+$username = "inventory_user";      // your MySQL username
+$password = "munene20M";          // your MySQL password
 
 try {
     // Create PDO instance

@@ -791,8 +791,8 @@ unset($_SESSION['success'], $_SESSION['error']);
                                     <span class="badge badge-inactive"><i class="fas fa-ban"></i> Inactive</span>
                                 <?php endif; ?>
                             </td>
-                            <td><small><?= date('M j, Y', strtotime($u['created_at'])) ?></small></td>
-                            <td><small><?= $u['last_login'] ? date('M j, Y', strtotime($u['last_login'])) : 'Never' ?></small></td>
+                            <td><small><?= date('M j, Y g:i A', strtotime($u['created_at'])) ?></small></td>
+                            <td><small><?= $u['last_login'] ? date('M j, Y g:i A', strtotime($u['last_login'])) : 'Never' ?></small></td>
                             <td>
                                 <div class="action-buttons">
                                     <a href="edit_user.php?id=<?= $u['id'] ?>" class="btn btn-secondary btn-sm">
