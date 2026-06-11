@@ -2,126 +2,205 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
+require_once "../includes/header.php";
+require_once "../includes/sidebar.php";
 
-$error = $success = "";
-$user_id = $_SESSION['user_id'];
+// Only super_admin, inventory_admin, manager can access
+if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin', 'manager'])) {
+    die("ACCESS DENIED: You do not have permission to access this page.");
+}
+
+$user_id = (int) $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 
-// Get user's branch if not super_admin
+// Get user's branch (if not super_admin)
 $user_branch = null;
 if ($user_role !== 'super_admin') {
     $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
-    $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
-    $user_branch = $user_data['branch'] ?? null;
+    $user_branch = $stmt->fetchColumn();
+    if (!$user_branch) {
+        die("Your account has no branch assigned. Contact administrator.");
+    }
 }
 
+$error = "";
+$success = "";
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $serial = trim($_POST['serial_number']);
-    $model  = trim($_POST['model_name']);
-    $user   = $user_id;
-    
-    // Determine branch based on user role
+    $serial = trim($_POST['serial_number'] ?? '');
+    $model = trim($_POST['model_name'] ?? '');
+
+    // Branch determination
     if ($user_role === 'super_admin') {
         $branch = $_POST['branch'] ?? '';
-        if (!$branch) {
-            $error = "Please select a branch.";
-        }
+        if (!$branch) $error = "Please select a branch.";
     } else {
-        $branch = $user_branch; // Non-super_admins can only add to their branch
-        if (!$branch) {
-            $error = "Branch not found for your account.";
-        }
+        $branch = $user_branch;
     }
 
-    if (!$error && $serial && $model && $branch) {
-        // Check for duplicate serial number
+    if (!$error && ($serial === '' || $model === '')) {
+        $error = "All fields are required.";
+    }
+
+    if (!$error) {
+        // Check duplicate serial
         $check = $conn->prepare("SELECT serial_number FROM printers WHERE serial_number = ?");
         $check->execute([$serial]);
         if ($check->rowCount() > 0) {
-            $error = "This serial number already exists!";
+            $error = "Printer with this serial number already exists.";
         } else {
-            try {
-                $stmt = $conn->prepare("
-                    INSERT INTO printers (serial_number, model_name, branch, added_by)
-                    VALUES (?, ?, ?, ?)
-                ");
-                $stmt->execute([$serial, $model, $branch, $user]);
-                $success = "Printer added to $branch branch successfully";
-            } catch (PDOException $e) {
-                $error = "Error adding printer: " . $e->getMessage();
-            }
+            $insert = $conn->prepare("
+                INSERT INTO printers (serial_number, model_name, status, branch, added_by)
+                VALUES (?, ?, 'In Stock', ?, ?)
+            ");
+            $insert->execute([$serial, $model, $branch, $user_id]);
+
+            // Log activity
+            $log = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'Added printer', ?)");
+            $log->execute([$user_id, "Added printer SN: $serial ($model) to $branch branch"]);
+
+            $success = "Printer added successfully to $branch branch!";
         }
-    } elseif (!$error) {
-        $error = "All fields are required";
     }
 }
+
+// Greeting
+date_default_timezone_set('Africa/Nairobi');
+$hour = date('G');
+if ($hour < 12) $greeting = 'Good morning';
+elseif ($hour < 17) $greeting = 'Good afternoon';
+else $greeting = 'Good evening';
+$user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 ?>
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-<title>Add Printer</title>
-<style>
-body { font-family: Arial; background:#f4f7f6; }
-.container { max-width:450px; margin:40px auto; background:#fff; padding:25px; border-radius:8px; box-shadow:0 4px 15px rgba(0,0,0,.1); }
-h2 { text-align:center; color:#2f7a3f; }
-input, select { width:100%; padding:10px; margin-bottom:15px; border-radius:5px; border:1px solid #ccc; }
-button { width:100%; padding:12px; background:#2f7a3f; color:#fff; border:none; border-radius:5px; font-weight:bold; }
-.error { color:red; text-align:center; }
-.success { color:green; text-align:center; }
-.branch-info {
-    padding:10px;
-    background:#e7f3ff;
-    border-left:4px solid #007bff;
-    margin-bottom:15px;
-    border-radius:4px;
-    font-size:14px;
-}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Add Printer | Mombasa Computers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Copy the exact same CSS from add_monitor.php (or link to a shared file) */
+        :root {
+            --primary: #1a4b2a;
+            --primary-light: #2a6b3a;
+            --primary-dark: #0f3a1e;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+            --radius-xl: 1rem;
+            --font-sans: 'Inter', system-ui, sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-sans); background: var(--gray-100); color: var(--gray-800); line-height: 1.5; overflow-x: hidden; }
+        .main-content { padding: 2rem 2rem 1rem; margin-left: 260px; width: calc(100% - 260px); min-height: 100vh; background: var(--gray-100); transition: all 0.3s ease; }
+        .page-header { background: white; padding: 1.5rem 2rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; box-shadow: var(--shadow-sm); border: 1px solid var(--gray-200); }
+        .page-header h1 { font-size: 1.75rem; color: var(--gray-800); font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .page-header h1 i { color: var(--primary); font-size: 1.75rem; }
+        .breadcrumb { color: var(--gray-500); font-size: 0.9rem; }
+        .breadcrumb a { color: var(--primary); text-decoration: none; }
+        .form-container { max-width: 700px; margin: 0 auto; }
+        .card { background: white; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); overflow: hidden; box-shadow: var(--shadow-sm); }
+        .card-header { background: var(--gray-50); padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--gray-200); }
+        .card-header h2 { font-size: 1.25rem; font-weight: 600; color: var(--gray-800); display: flex; align-items: center; gap: 0.5rem; }
+        .card-header h2 i { color: var(--primary); }
+        .card-body { padding: 1.5rem; }
+        .info-box { background: var(--gray-50); border-radius: var(--radius-lg); padding: 1rem 1.25rem; margin-bottom: 1.5rem; border-left: 4px solid var(--primary); }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; font-size: 0.875rem; font-weight: 500; color: var(--gray-700); margin-bottom: 0.5rem; }
+        .form-group input, .form-group select { width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); font-size: 0.9rem; background: white; font-family: var(--font-sans); }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,75,42,0.1); }
+        .btn { padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius-md); font-size: 0.9rem; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; font-family: var(--font-sans); }
+        .btn-primary { background: var(--primary); color: white; width: 100%; justify-content: center; }
+        .btn-primary:hover { background: var(--primary-light); }
+        .alert { padding: 1rem 1.25rem; border-radius: var(--radius-md); margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .alert-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+        .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
+        @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
+        @media (max-width: 768px) { .page-header h1 { font-size: 1.25rem; } .card-body { padding: 1rem; } .btn { width: 100%; justify-content: center; } }
+    </style>
 </head>
 <body>
-
-<div class="container">
-<h2>Add Printer</h2>
-<a href="/inventory_system/dashboard/index.php"
-   style="position: top:10px; right:10px; padding:10px 15px; 
-          background:#007bff; color:white; border-radius:6px; 
-          text-decoration:none; font-weight:bold; z-index:999;">
-    Dashboard
-</a> <br><br>
-
-<div class="branch-info">
-    <strong>Branch Information:</strong><br>
-    <?php if($user_role === 'super_admin'): ?>
-        You can add printers to any branch.
-    <?php else: ?>
-        You can only add printers to your branch: <strong><?= htmlspecialchars($user_branch) ?></strong>
-    <?php endif; ?>
-</div>
-
-<?php if($error): ?><div class="error"><?= $error ?></div><?php endif; ?>
-<?php if($success): ?><div class="success"><?= $success ?></div><?php endif; ?>
-
-<form method="POST">
-    <input type="text" name="serial_number" placeholder="Scan / Enter Serial Number" autofocus required>
-    <input type="text" name="model_name" placeholder="Printer Model" required>
-
-    <?php if($user_role === 'super_admin'): ?>
-        <select name="branch" required>
-            <option value="">-- Select Branch --</option>
-            <option value="KIMATHI">KIMATHI</option>
-            <option value="MOI">MOI</option>
-        </select>
-    <?php else: ?>
-        <input type="hidden" name="branch" value="<?= htmlspecialchars($user_branch) ?>">
-        <div style="padding:10px; background:#f8f9fa; border-radius:5px; margin-bottom:15px;">
-            <strong>Branch:</strong> <?= htmlspecialchars($user_branch) ?>
+<div class="main-content">
+    <div class="page-header">
+        <h1><i class="fas fa-print"></i> Add Printer</h1>
+        <div class="breadcrumb">
+            <?php if ($user_role === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php">Dashboard</a>
+            <?php elseif ($user_role === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php">Dashboard</a>
+            <?php else: ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php">Dashboard</a>
+            <?php endif; ?>
+            <span> / </span>
+            <a href="printers_instock.php">Printers</a>
+            <span> / </span>
+            <span>Add Printer</span>
         </div>
-    <?php endif; ?>
+    </div>
 
-    <button type="submit">Add Printer</button>
-</form>
+    <div class="form-container">
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-plus-circle"></i> Printer Information</h2></div>
+            <div class="card-body">
+                <?php if ($error): ?>
+                    <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?></div>
+                <?php endif; ?>
+                <?php if ($success): ?>
+                    <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?= htmlspecialchars($success) ?></div>
+                <?php endif; ?>
+
+                <div class="info-box">
+                    <?php if ($user_role === 'super_admin'): ?>
+                        <strong><i class="fas fa-store"></i> You can add printers to any branch.</strong>
+                    <?php else: ?>
+                        <strong><i class="fas fa-store"></i> Your branch: <?= htmlspecialchars($user_branch) ?></strong>
+                    <?php endif; ?>
+                </div>
+
+                <form method="POST">
+                    <div class="form-group">
+                        <label>Serial Number</label>
+                        <input type="text" name="serial_number" required autofocus placeholder="Scan or type serial number">
+                    </div>
+                    <div class="form-group">
+                        <label>Model Name</label>
+                        <input type="text" name="model_name" required placeholder="e.g., HP LaserJet Pro M203dw">
+                    </div>
+                    <?php if ($user_role === 'super_admin'): ?>
+                        <div class="form-group">
+                            <label>Branch</label>
+                            <select name="branch" required>
+                                <option value="">-- Select Branch --</option>
+                                <option value="KIMATHI">KIMATHI</option>
+                                <option value="MOI">MOI</option>
+                            </select>
+                        </div>
+                    <?php else: ?>
+                        <input type="hidden" name="branch" value="<?= htmlspecialchars($user_branch) ?>">
+                    <?php endif; ?>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Add Printer</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
-
+<?php require_once "../includes/footer.php"; ?>
 </body>
 </html>

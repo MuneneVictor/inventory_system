@@ -1,6 +1,6 @@
 <?php
 require_once "../includes/auth_check.php";
-// sidebar.php - Sidebar component for inventory system
+// sidebar.php - Sidebar component for inventory system (FIXED: responsive breakpoint at 1024px)
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -256,7 +256,7 @@ require_once "../includes/auth_check.php";
 </div>
 
 <style>
-/* EXACT MATCH OF VIMARK TECH SIDEBAR - only colors changed */
+/* ========== FIXED SIDEBAR STYLES ========== */
 * {
     margin: 0;
     padding: 0;
@@ -276,7 +276,7 @@ body {
     position: fixed; 
     top: 0; 
     left: 0; 
-    width: 240px; 
+    width: 260px;   /* changed from 240px to match main-content margin */
     height: 100vh; 
     background: linear-gradient(to bottom, #2f7a3f, #1f5a2d); 
     color: #fff; 
@@ -355,21 +355,28 @@ body {
     background: rgba(220,53,69,1); 
 }
 
+/* Hamburger toggle button */
 .sidebar-toggle { 
     position: fixed; 
     top: 15px; 
     left: 15px; 
     background: #2f7a3f; 
     color: white; 
-    padding: 10px 15px; 
-    border-radius: 6px; 
+    padding: 10px 16px; 
+    border-radius: 8px; 
     cursor: pointer; 
     z-index: 1001; 
     display: none; 
     align-items: center; 
     gap: 8px; 
     font-weight: 500; 
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    font-size: 1rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    transition: background 0.2s;
+}
+
+.sidebar-toggle:hover {
+    background: #1f5a2d;
 }
 
 .sidebar-overlay { 
@@ -383,10 +390,11 @@ body {
     display: none; 
 }
 
-@media (max-width: 768px) { 
+/* ========== RESPONSIVE BREAKPOINT - NOW AT 1024px ========== */
+@media (max-width: 1024px) { 
     .sidebar { 
         transform: translateX(-100%);
-        width: 240px;
+        width: 260px;
     } 
     .sidebar.active { 
         transform: translateX(0); 
@@ -399,17 +407,41 @@ body {
     }
 }
 
+/* Extra small devices (phones) */
+@media (max-width: 480px) {
+    .sidebar-toggle {
+        padding: 8px 14px;
+        font-size: 0.9rem;
+    }
+    .sidebar {
+        width: 85%;
+        max-width: 280px;
+    }
+}
+
+/* Scrollbar styling */
 .sidebar::-webkit-scrollbar { 
     width: 4px; 
 }
-
 .sidebar::-webkit-scrollbar-track { 
     background: rgba(255,255,255,0.1); 
 }
-
 .sidebar::-webkit-scrollbar-thumb { 
     background: rgba(255,255,255,0.3); 
     border-radius: 2px; 
+}
+
+/* ========== GLOBAL FIX FOR MAIN CONTENT ========== */
+/* This ensures that when sidebar is hidden (on screens ≤1024px),
+   the main content area takes full width without being overlapped.
+   Note: Your page-specific .main-content already has margin-left:260px;
+   The media query below overrides it at the same breakpoint. */
+@media (max-width: 1024px) {
+    .main-content {
+        margin-left: 0 !important;
+        width: 100% !important;
+        padding-top: 5rem !important;
+    }
 }
 </style>
 
@@ -420,23 +452,28 @@ function toggleSidebar() {
     sidebar.classList.toggle('active');
     overlay.classList.toggle('active');
     
-    // Prevent body scroll when sidebar is open on mobile
-    if (sidebar.classList.contains('active') && window.innerWidth <= 768) {
+    // Prevent body scroll when sidebar is open on mobile/tablet
+    if (sidebar.classList.contains('active') && window.innerWidth <= 1024) {
         document.body.style.overflow = 'hidden';
     } else {
         document.body.style.overflow = '';
     }
 }
 
-// Close sidebar when clicking a link on mobile
+// Close sidebar when clicking a link on mobile/tablet
 document.addEventListener('DOMContentLoaded', function() {
     document.querySelectorAll('.menu-item').forEach(link => {
         link.addEventListener('click', function() {
-            if (window.innerWidth <= 768) {
+            if (window.innerWidth <= 1024) {
+                // Small delay to allow the link to navigate, but close sidebar
                 setTimeout(function() {
-                    document.querySelector('.sidebar').classList.remove('active');
-                    document.querySelector('.sidebar-overlay').classList.remove('active');
-                    document.body.style.overflow = '';
+                    const sidebar = document.querySelector('.sidebar');
+                    const overlay = document.querySelector('.sidebar-overlay');
+                    if (sidebar.classList.contains('active')) {
+                        sidebar.classList.remove('active');
+                        overlay.classList.remove('active');
+                        document.body.style.overflow = '';
+                    }
                 }, 100);
             }
         });
@@ -444,7 +481,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Close sidebar when pressing Escape key
     document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape' && window.innerWidth <= 768) {
+        if (e.key === 'Escape' && window.innerWidth <= 1024) {
             const sidebar = document.querySelector('.sidebar');
             if (sidebar.classList.contains('active')) {
                 toggleSidebar();

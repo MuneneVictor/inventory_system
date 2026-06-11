@@ -125,7 +125,6 @@ unset($_SESSION['success'], $_SESSION['error']);
     <title>View Users | Mombasa Computers</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
-        /* Your existing CSS (unchanged) */
         :root {
             --primary: #1a4b2a;
             --primary-light: #2a6b3a;
@@ -325,7 +324,9 @@ unset($_SESSION['success'], $_SESSION['error']);
 
         .filter-actions {
             display: flex;
+            flex-wrap: wrap;
             gap: 0.75rem;
+            align-items: center;
         }
 
         .btn {
@@ -341,6 +342,7 @@ unset($_SESSION['success'], $_SESSION['error']);
             align-items: center;
             gap: 0.5rem;
             font-family: var(--font-sans);
+            white-space: nowrap;
         }
 
         .btn-primary {
@@ -562,12 +564,14 @@ unset($_SESSION['success'], $_SESSION['error']);
             }
 
             .filter-actions {
-                grid-column: span 1;
+                flex-direction: column;
+                width: 100%;
             }
 
-            .btn {
+            .filter-actions .btn {
                 width: 100%;
                 justify-content: center;
+                white-space: normal;
             }
 
             .action-buttons {
@@ -700,7 +704,7 @@ unset($_SESSION['success'], $_SESSION['error']);
                 <a href="view_users.php" class="btn btn-secondary">
                     <i class="fas fa-undo"></i> Reset
                 </a>
-                <a href="generate_code.php" class="btn btn-primary">
+                <a href="generate_code.php" class="btn btn-secondary">
                     <i class="fas fa-key"></i> Generate Code
                 </a>
             </div>
@@ -800,12 +804,10 @@ unset($_SESSION['success'], $_SESSION['error']);
                                     </a>
                                     <?php if ($u['id'] != $_SESSION['user_id']): ?>
                                         <?php if ($u['is_active'] == 1): ?>
-                                            <!-- Show RESTRICT button (red) for active users -->
                                             <button type="button" class="btn btn-danger btn-sm" onclick="toggleUserStatus(<?= $u['id'] ?>, '<?= htmlspecialchars($u['full_name']) ?>', 'restrict')">
                                                 <i class="fas fa-ban"></i> Restrict
                                             </button>
                                         <?php else: ?>
-                                            <!-- Show ACTIVATE button (green) for inactive users -->
                                             <button type="button" class="btn btn-success btn-sm" onclick="toggleUserStatus(<?= $u['id'] ?>, '<?= htmlspecialchars($u['full_name']) ?>', 'activate')">
                                                 <i class="fas fa-check-circle"></i> Activate
                                             </button>
@@ -882,7 +884,7 @@ function toggleUserStatus(userId, userName, action) {
 document.addEventListener('DOMContentLoaded', function() {
     function adjustMainContent() {
         const mainContent = document.querySelector('.main-content');
-        const sidebar = document.getElementById('sidebar');
+        const sidebar = document.querySelector('.sidebar');
         
         if (window.innerWidth <= 1200) {
             if (mainContent) {

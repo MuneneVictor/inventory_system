@@ -682,7 +682,7 @@ document.addEventListener('DOMContentLoaded', function() {
 document.addEventListener('DOMContentLoaded', function() {
     function adjustMainContent() {
         const mainContent = document.querySelector('.main-content');
-        const sidebar = document.getElementById('sidebar');
+        const sidebar = document.querySelector('.sidebar');
         
         if (window.innerWidth <= 1200) {
             if (mainContent) {

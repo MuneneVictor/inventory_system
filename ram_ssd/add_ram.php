@@ -2,219 +2,261 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
+require_once "../includes/header.php";
+require_once "../includes/sidebar.php";
 
-// Check if user is logged in
-if(!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php");
-    exit();
+// Only super_admin, inventory_admin, manager can access
+if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin', 'manager'])) {
+    die("ACCESS DENIED: You do not have permission to access this page.");
 }
 
-$role = $_SESSION['role'];
-$user_id = $_SESSION['user_id'];
+$user_id = (int) $_SESSION['user_id'];
+$user_role = $_SESSION['role'];
 
-// Only inventory admin or super admin can add
-if(!in_array($role, ['super_admin','inventory_admin', 'manager'])) {
-    header("Location: ../dashboard/index.php");
-    exit();
+// Get user's branch (if not super_admin)
+$user_branch = null;
+if ($user_role !== 'super_admin') {
+    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
+    $stmt->execute([$user_id]);
+    $user_branch = $stmt->fetchColumn();
+    if (!$user_branch) {
+        die("Your account has no branch assigned. Contact administrator.");
+    }
 }
-
-// Fetch user's branch for inventory_admin
-$user_stmt = $conn->prepare("SELECT branch FROM users WHERE id = :user_id");
-$user_stmt->execute(['user_id' => $user_id]);
-$user_data = $user_stmt->fetch(PDO::FETCH_ASSOC);
-$user_branch = $user_data['branch'] ?? null;
 
 // For super_admin: fetch all branches
 $all_branches = [];
-if ($role === 'super_admin') {
-    try {
-        $branch_stmt = $conn->prepare("SELECT DISTINCT branch FROM users WHERE branch IS NOT NULL ORDER BY branch");
-        $branch_stmt->execute();
-        $all_branches = $branch_stmt->fetchAll(PDO::FETCH_COLUMN);
-    } catch (PDOException $e) {
-        die("Database error: " . $e->getMessage());
-    }
+if ($user_role === 'super_admin') {
+    $branch_stmt = $conn->prepare("SELECT DISTINCT branch FROM users WHERE branch IS NOT NULL ORDER BY branch");
+    $branch_stmt->execute();
+    $all_branches = $branch_stmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
 $error = "";
 $success = "";
 
-if($_SERVER['REQUEST_METHOD'] === 'POST'){
-    $category = $_POST['category'] ?? '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $category = trim($_POST['category'] ?? '');
     $type = trim($_POST['type'] ?? '');
-    $storage = intval($_POST['storage'] ?? 0);
-    $quantity = intval($_POST['quantity'] ?? 0);
-    
-    // Branch logic: super_admin can select any branch, inventory_admin uses their branch
-    if ($role === 'super_admin') {
-        $branch = $_POST['branch'] ?? '';
+    $storage = (int) ($_POST['storage'] ?? 0);
+    $quantity = (int) ($_POST['quantity'] ?? 0);
+
+    // Branch determination
+    if ($user_role === 'super_admin') {
+        $branch = trim($_POST['branch'] ?? '');
+        if (!$branch) $error = "Please select a branch.";
     } else {
         $branch = $user_branch;
     }
 
-    // Validate inputs
-    if(!$category || !$type || !$storage || !$quantity || !$branch){
-        $error = "All fields are required.";
-    } elseif($storage <= 0) {
-        $error = "Storage must be greater than 0 GB.";
-    } elseif($quantity <= 0) {
-        $error = "Quantity must be greater than 0.";
-    } elseif($role === 'inventory_admin' && !$user_branch) {
-        $error = "Your account is not assigned to any branch. Please contact administrator.";
-    } elseif($role === 'inventory_admin' && $branch !== $user_branch) {
-        $error = "You can only add items to your assigned branch ($user_branch).";
-    } else {
-        try {
-            // Check if item already exists in this branch with same category, type, and storage
-            $check_stmt = $conn->prepare("SELECT id, quantity FROM rams_ssds WHERE category=:category AND type=:type AND storage=:storage AND branch=:branch");
-            $check_stmt->execute([
-                'category' => $category,
-                'type' => $type,
-                'storage' => $storage,
-                'branch' => $branch
-            ]);
-            $existing_item = $check_stmt->fetch(PDO::FETCH_ASSOC);
+    if (!$error && (!$category || !$type || $storage <= 0 || $quantity <= 0)) {
+        $error = "All fields are required and must be positive numbers.";
+    }
 
-            if($existing_item) {
-                // Update existing item quantity (increase by the new quantity)
-                $new_quantity = $existing_item['quantity'] + $quantity;
-                $update_stmt = $conn->prepare("UPDATE rams_ssds SET quantity=:quantity, updated_by=:updated_by, date_updated=NOW() WHERE id=:id");
-                $update_stmt->execute([
-                    'quantity' => $new_quantity,
-                    'updated_by' => $user_id,
-                    'id' => $existing_item['id']
-                ]);
-                
-                $action_type = "Updated";
-                $message_action = "increased";
+    if (!$error) {
+        try {
+            // Check if item already exists
+            $check = $conn->prepare("SELECT id, quantity FROM rams_ssds WHERE category = ? AND type = ? AND storage = ? AND branch = ?");
+            $check->execute([$category, $type, $storage, $branch]);
+            $existing = $check->fetch(PDO::FETCH_ASSOC);
+
+            if ($existing) {
+                // Update existing
+                $new_qty = $existing['quantity'] + $quantity;
+                $update = $conn->prepare("UPDATE rams_ssds SET quantity = ?, updated_by = ?, date_updated = NOW() WHERE id = ?");
+                $update->execute([$new_qty, $user_id, $existing['id']]);
+                $msg = "Updated existing stock, new quantity: $new_qty";
             } else {
-                // Insert new item
-                $insert_stmt = $conn->prepare("INSERT INTO rams_ssds (category, type, storage, quantity, branch, updated_by) 
-                                VALUES (:category, :type, :storage, :quantity, :branch, :updated_by)");
-                $insert_stmt->execute([
-                    'category' => $category,
-                    'type' => $type,
-                    'storage' => $storage,
-                    'quantity' => $quantity,
-                    'branch' => $branch,
-                    'updated_by' => $user_id
-                ]);
-                
-                $action_type = "Added";
-                $message_action = "added";
+                // Insert new
+                $insert = $conn->prepare("INSERT INTO rams_ssds (category, type, storage, quantity, branch, updated_by) VALUES (?, ?, ?, ?, ?, ?)");
+                $insert->execute([$category, $type, $storage, $quantity, $branch, $user_id]);
+                $msg = "Added new item with quantity: $quantity";
             }
 
             // Log activity
-            $activity_stmt = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) 
-                            VALUES (:uid, :action, :details)");
-            $activity_stmt->execute([
-                'uid' => $user_id,
-                'action' => $action_type . ' RAM/SSD',
-                'details' => $quantity . ' ' . $category . '(s) of type ' . $type . ' (' . $storage . 'GB) ' . $message_action . ' in ' . $branch
-            ]);
+            $log = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'Add RAM/SSD', ?)");
+            $log->execute([$user_id, "Added/updated $category ($type, {$storage}GB) quantity $quantity in $branch branch"]);
 
-            $success = "RAM/SSD " . strtolower($message_action) . " successfully!";
-            
+            $success = "RAM/SSD saved successfully! $msg";
         } catch (PDOException $e) {
             $error = "Database error: " . $e->getMessage();
         }
     }
 }
+
+date_default_timezone_set('Africa/Nairobi');
+$hour = date('G');
+if ($hour < 12) $greeting = 'Good morning';
+elseif ($hour < 17) $greeting = 'Good afternoon';
+else $greeting = 'Good evening';
+$user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 ?>
 
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Add RAM/SSD</title>
-<style>
-body{font-family:Arial; background:#f4f7f6; margin:0; padding:0;}
-.container{max-width:600px;margin:30px auto;background:#fff;padding:25px;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.1);}
-h2{text-align:center;color:#2f7a3f;margin-bottom:20px;}
-.user-role { text-align:center; color:#555; margin-bottom:15px; font-weight:bold; }
-label{display:block; margin-bottom:5px; font-weight:bold; margin-top:10px;}
-input, select{width:100%;padding:12px;margin-bottom:15px;border-radius:5px;border:1px solid #ccc; box-sizing:border-box;}
-button{width:100%;padding:12px;background:#2f7a3f;color:#fff;border:none;border-radius:5px;font-weight:bold;cursor:pointer;}
-button:hover{background:#1f5a2d;}
-.error{color:#d32f2f;text-align:center;margin-bottom:15px; padding:10px; background:#ffeaea; border-radius:5px;}
-.success{color:#2f7a3f;text-align:center;margin-bottom:15px; padding:10px; background:#e8f5e8; border-radius:5px;}
-a.dashboard-btn{display:inline-block;margin-bottom:20px;background:#007bff;color:#fff;padding:10px 15px;border-radius:6px;text-decoration:none;font-weight:bold;}
-a.dashboard-btn:hover{background:#005fa3;}
-.info-note {color:#666; font-size:12px; margin-top:-10px; margin-bottom:15px;}
-.super-admin-note {color:#1a73e8; background:#e8f5e8; padding:10px; border-radius:5px; margin-bottom:15px; text-align:center;}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Add RAM/SSD | Mombasa Computers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary: #1a4b2a;
+            --primary-light: #2a6b3a;
+            --primary-dark: #0f3a1e;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+            --radius-xl: 1rem;
+            --font-sans: 'Inter', system-ui, sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-sans); background: var(--gray-100); color: var(--gray-800); line-height: 1.5; overflow-x: hidden; }
+        .main-content { padding: 2rem 2rem 1rem; margin-left: 260px; width: calc(100% - 260px); min-height: 100vh; background: var(--gray-100); transition: all 0.3s ease; }
+        .page-header { background: white; padding: 1.5rem 2rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; box-shadow: var(--shadow-sm); border: 1px solid var(--gray-200); }
+        .page-header h1 { font-size: 1.75rem; color: var(--gray-800); font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .page-header h1 i { color: var(--primary); font-size: 1.75rem; }
+        .breadcrumb { color: var(--gray-500); font-size: 0.9rem; }
+        .breadcrumb a { color: var(--primary); text-decoration: none; }
+        .form-container { max-width: 700px; margin: 0 auto; }
+        .card { background: white; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); overflow: hidden; box-shadow: var(--shadow-sm); }
+        .card-header { background: var(--gray-50); padding: 1.25rem 1.5rem; border-bottom: 1px solid var(--gray-200); }
+        .card-header h2 { font-size: 1.25rem; font-weight: 600; color: var(--gray-800); display: flex; align-items: center; gap: 0.5rem; }
+        .card-header h2 i { color: var(--primary); }
+        .card-body { padding: 1.5rem; }
+        .info-box { background: var(--gray-50); border-radius: var(--radius-lg); padding: 1rem 1.25rem; margin-bottom: 1.5rem; border-left: 4px solid var(--primary); }
+        .form-group { margin-bottom: 1.5rem; }
+        .form-group label { display: block; font-size: 0.875rem; font-weight: 500; color: var(--gray-700); margin-bottom: 0.5rem; }
+        .form-group input, .form-group select { width: 100%; padding: 0.75rem 1rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); font-size: 0.9rem; background: white; font-family: var(--font-sans); }
+        .form-group input:focus, .form-group select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(26,75,42,0.1); }
+        .btn { padding: 0.75rem 1.5rem; border: none; border-radius: var(--radius-md); font-size: 0.9rem; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; font-family: var(--font-sans); }
+        .btn-primary { background: var(--primary); color: white; width: 100%; justify-content: center; }
+        .btn-primary:hover { background: var(--primary-light); }
+        .alert { padding: 1rem 1.25rem; border-radius: var(--radius-md); margin-bottom: 1.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .alert-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+        .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+        .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
+        @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
+        @media (max-width: 768px) { .page-header h1 { font-size: 1.25rem; } .card-body { padding: 1rem; } .btn { width: 100%; justify-content: center; } }
+    </style>
 </head>
 <body>
-<div class="container">
-<a href="/inventory_system/dashboard/index.php" class="dashboard-btn">Dashboard</a>
-<h2>Add RAM / SSD</h2>
-
-<div class="user-role">
-    Logged in as: <?= htmlspecialchars(strtoupper($role)) ?>
-</div>
-
-<?php if($role === 'super_admin'): ?>
-    <div class="super-admin-note">
-        <strong>Super Admin Mode:</strong> You can add RAM/SSD to any branch
+<div class="main-content">
+    <div class="page-header">
+        <h1><i class="fas fa-microchip"></i> Add RAM/SSD</h1>
+        <div class="breadcrumb">
+            <?php if ($user_role === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php">Dashboard</a>
+            <?php elseif ($user_role === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php">Dashboard</a>
+            <?php else: ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php">Dashboard</a>
+            <?php endif; ?>
+            <span> / </span>
+            <a href="rams_instocks.php">RAM/SSD Stock</a>
+            <span> / </span>
+            <span>Add RAM/SSD</span>
+        </div>
     </div>
-<?php endif; ?>
 
-<?php if($error): ?>
-    <div class="error"><?= htmlspecialchars($error) ?></div>
-<?php endif; ?>
+    <div class="form-container">
+        <div class="card">
+            <div class="card-header"><h2><i class="fas fa-plus-circle"></i> RAM/SSD Information</h2></div>
+            <div class="card-body">
+                <?php if ($error): ?>
+                    <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i> <?= htmlspecialchars($error) ?></div>
+                <?php endif; ?>
+                <?php if ($success): ?>
+                    <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?= htmlspecialchars($success) ?></div>
+                <?php endif; ?>
 
-<?php if($success): ?>
-    <div class="success"><?= htmlspecialchars($success) ?></div>
-<?php endif; ?>
+                <div class="info-box">
+                    <?php if ($user_role === 'super_admin'): ?>
+                        <strong><i class="fas fa-store"></i> You can add RAM/SSD to any branch.</strong>
+                    <?php else: ?>
+                        <strong><i class="fas fa-store"></i> Your branch: <?= htmlspecialchars($user_branch) ?></strong>
+                    <?php endif; ?>
+                </div>
 
-<?php if($role === 'inventory_admin' && !$user_branch): ?>
-    <div class="error">Your account is not assigned to any branch. Please contact administrator.</div>
-<?php else: ?>
-    <form method="POST">
-        <label>Category</label>
-        <select name="category" required>
-            <option value="">-- Select Category --</option>
-            <option value="RAM">RAM</option>
-            <option value="SSD">SSD</option>
-        </select>
-
-        <label>Type</label>
-        <input type="text" name="type" placeholder="e.g. DDR3, SATA" required>
-        <p class="info-note">For RAM: DDR3, DDR4, DDR5. For SSD: SATA or NVMe</p>
-
-        <label>Storage Capacity (GB)</label>
-        <input type="number" name="storage" min="1" placeholder="e.g. 8 for RAM, 256 for SSD" required>
-        <p class="info-note">Enter storage capacity in GB (e.g., 8GB RAM, 256GB SSD)</p>
-
-        <label>Quantity</label>
-        <input type="number" name="quantity" min="1" placeholder="Number of units" required>
-
-        <label>Branch</label>
-        <?php if($role === 'super_admin'): ?>
-            <select name="branch" required>
-                <option value="">-- Select Branch --</option>
-                <?php foreach($all_branches as $branch_name): ?>
-                    <option value="<?= htmlspecialchars($branch_name) ?>" 
-                        <?= isset($_POST['branch']) && $_POST['branch'] === $branch_name ? 'selected' : '' ?>>
-                        <?= htmlspecialchars($branch_name) ?>
-                    </option>
-                <?php endforeach; ?>
-            </select>
-            <p class="info-note">You can select any branch</p>
-        <?php else: ?>
-            <!-- For inventory_admin: show disabled select with hidden input -->
-            <select name="branch_display" disabled>
-                <option value="<?= htmlspecialchars($user_branch) ?>" selected>
-                    <?= htmlspecialchars($user_branch) ?>
-                </option>
-            </select>
-            <input type="hidden" name="branch" value="<?= htmlspecialchars($user_branch) ?>">
-            <p class="info-note">You can only add items to your assigned branch: <strong><?= htmlspecialchars($user_branch) ?></strong></p>
-        <?php endif; ?>
-
-        <button type="submit">Add RAM/SSD</button>
-    </form>
-<?php endif; ?>
+                <form method="POST">
+                    <div class="form-group">
+                        <label>Category</label>
+                        <select name="category" required>
+                            <option value="">-- Select Category --</option>
+                            <option value="RAM">RAM</option>
+                            <option value="SSD">SSD</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Type</label>
+                        <input type="text" name="type" required placeholder="e.g., DDR4, SATA, NVMe">
+                    </div>
+                    <div class="form-group">
+                        <label>Storage Capacity (GB)</label>
+                        <input type="number" name="storage" min="1" required placeholder="e.g., 8, 16, 256, 512">
+                    </div>
+                    <div class="form-group">
+                        <label>Quantity</label>
+                        <input type="number" name="quantity" min="1" required placeholder="Number of units">
+                    </div>
+                    <?php if ($user_role === 'super_admin'): ?>
+                        <div class="form-group">
+                            <label>Branch</label>
+                            <select name="branch" required>
+                                <option value="">-- Select Branch --</option>
+                                <?php foreach ($all_branches as $branch): ?>
+                                    <option value="<?= htmlspecialchars($branch) ?>"><?= htmlspecialchars($branch) ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                    <?php else: ?>
+                        <input type="hidden" name="branch" value="<?= htmlspecialchars($user_branch) ?>">
+                    <?php endif; ?>
+                    <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Add RAM/SSD</button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
+
+<script>
+// Mobile responsive adjustments
+document.addEventListener('DOMContentLoaded', function() {
+    function adjustMainContent() {
+        const mainContent = document.querySelector('.main-content');
+        const sidebar = document.querySelector('.sidebar');
+        if (window.innerWidth <= 1200) {
+            if (mainContent) {
+                mainContent.style.marginLeft = '0';
+                mainContent.style.width = '100%';
+                mainContent.style.paddingTop = '5rem';
+            }
+        } else {
+            if (mainContent && sidebar) {
+                mainContent.style.marginLeft = '260px';
+                mainContent.style.width = 'calc(100% - 260px)';
+                mainContent.style.paddingTop = '';
+            }
+        }
+    }
+    adjustMainContent();
+    window.addEventListener('resize', adjustMainContent);
+    window.addEventListener('orientationchange', adjustMainContent);
+});
+</script>
+<?php require_once "../includes/footer.php"; ?>
 </body>
 </html>

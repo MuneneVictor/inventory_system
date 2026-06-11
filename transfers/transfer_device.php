@@ -2,7 +2,6 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
-require_once "../includes/header.php";
 require_once "../includes/sidebar.php";
 
 // Strict role check

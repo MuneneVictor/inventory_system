@@ -2,238 +2,235 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
+require_once "../includes/header.php";
+require_once "../includes/sidebar.php";
 
-// Check if user is logged in
-if(!isset($_SESSION['user_id'])) {
-    header("Location: ../login.php");
-    exit();
+if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin', 'manager'])) {
+    die("ACCESS DENIED.");
 }
 
-$role = $_SESSION['role'];
-$user_id = $_SESSION['user_id'];
+$user_id = (int) $_SESSION['user_id'];
+$user_role = $_SESSION['role'];
 
-if(!in_array($role, ['inventory_admin','super_admin', 'manager'])){
-    header("Location: ../dashboard/index.php");
-    exit();
-}
-
-// Fetch user's branch for inventory_admin
 $user_branch = null;
-if($role === 'inventory_admin') {
-    $user_stmt = $conn->prepare("SELECT branch FROM users WHERE id = :user_id");
-    $user_stmt->execute(['user_id' => $user_id]);
-    $user_data = $user_stmt->fetch(PDO::FETCH_ASSOC);
-    $user_branch = $user_data['branch'] ?? null;
+if ($user_role !== 'super_admin') {
+    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
+    $stmt->execute([$user_id]);
+    $user_branch = $stmt->fetchColumn();
+    if (!$user_branch) die("Your account has no branch assigned.");
 }
 
-// Get filter values
-$branch_filter = $_GET['branch'] ?? '';
-$category_filter = $_GET['category'] ?? '';
+$filter_category = $_GET['category'] ?? '';
+$filter_branch = $_GET['branch'] ?? '';
 
-// Build SQL query
 $sql = "SELECT r.*, u.full_name AS updated_by_name 
         FROM rams_ssds r 
         LEFT JOIN users u ON r.updated_by = u.id 
-        WHERE 1 ";
-
+        WHERE r.quantity > 0";
 $params = [];
 
-// Apply branch filter based on role
-if($role === 'inventory_admin') {
-    if($user_branch) {
-        $sql .= " AND r.branch = :branch";
-        $params['branch'] = $user_branch;
-    } else {
-        // If inventory_admin has no branch assigned, show nothing
-        $sql .= " AND 1=0";
-    }
-} elseif($role === 'super_admin' && $branch_filter) {
-    // Super admin can filter by branch
-    $sql .= " AND r.branch = :branch";
-    $params['branch'] = $branch_filter;
+if ($user_role !== 'super_admin') {
+    $sql .= " AND r.branch = ?";
+    $params[] = $user_branch;
 }
-
-// Apply category filter
-if($category_filter) {
-    $sql .= " AND r.category = :category";
-    $params['category'] = $category_filter;
+if (!empty($filter_category)) {
+    $sql .= " AND r.category = ?";
+    $params[] = $filter_category;
 }
-
+if ($user_role === 'super_admin' && !empty($filter_branch)) {
+    $sql .= " AND r.branch = ?";
+    $params[] = $filter_branch;
+}
 $sql .= " ORDER BY r.category, r.type, r.storage, r.branch";
 
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $stocks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Get available branches and categories for filters
-$available_branches = [];
-$available_categories = [];
-
-if($role === 'super_admin') {
-    $branch_stmt = $conn->query("SELECT DISTINCT branch FROM rams_ssds WHERE branch IS NOT NULL ORDER BY branch");
-    $available_branches = $branch_stmt->fetchAll(PDO::FETCH_COLUMN);
+// Get filter options
+$branches = [];
+$categories = [];
+if ($user_role === 'super_admin') {
+    $branchStmt = $conn->query("SELECT DISTINCT branch FROM rams_ssds WHERE branch IS NOT NULL ORDER BY branch");
+    $branches = $branchStmt->fetchAll(PDO::FETCH_COLUMN);
 }
+$catStmt = $conn->query("SELECT DISTINCT category FROM rams_ssds ORDER BY category");
+$categories = $catStmt->fetchAll(PDO::FETCH_COLUMN);
 
-// Get categories for both roles
-$category_stmt = $conn->query("SELECT DISTINCT category FROM rams_ssds WHERE category IS NOT NULL ORDER BY category");
-$available_categories = $category_stmt->fetchAll(PDO::FETCH_COLUMN);
-
-// JavaScript for autofilter
+date_default_timezone_set('Africa/Nairobi');
+$hour = date('G');
+if ($hour < 12) $greeting = 'Good morning';
+elseif ($hour < 17) $greeting = 'Good afternoon';
+else $greeting = 'Good evening';
+$user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>RAM & SSDs In Stock</title>
-<style>
-body{font-family:Arial; background:#f4f7f6; margin:0; padding:0;}
-.container{max-width:1300px;margin:30px auto;background:#fff;padding:25px;border-radius:8px;box-shadow:0 4px 15px rgba(0,0,0,0.1);}
-h2{text-align:center;color:#2f7a3f;margin-bottom:20px;}
-a.dashboard-btn{display:inline-block;margin-bottom:20px;background:#007bff;color:#fff;padding:10px 15px;border-radius:6px;text-decoration:none;font-weight:bold;}
-a.dashboard-btn:hover{background:#005fa3;}
-table{width:100%;border-collapse:collapse;margin-top:20px;}
-th,td{border:1px solid #ccc;padding:10px;text-align:left;}
-th{background:#2f7a3f;color:#fff;}
-.filter-box { margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px; }
-.filter-box select, .filter-box button { padding: 8px 12px; border-radius: 5px; border: 1px solid #ccc; margin-right: 10px; }
-.filter-box button { background: #2f7a3f; color: white; border: none; cursor: pointer; }
-.filter-box button:hover { background: #1f5a2d; }
-.filter-box a { margin-left: 10px; color: #dc3545; text-decoration: none; }
-.filter-row { display: flex; flex-wrap: wrap; gap: 15px; margin-bottom: 15px; }
-.filter-group { display: flex; flex-direction: column; }
-.filter-group label { margin-bottom: 5px; font-weight: bold; color: #555; }
-</style>
-<script>
-function autoSubmitForm() {
-    // Auto-submit the filter form when any filter changes
-    document.getElementById('filterForm').submit();
-}
-
-// Optional: Function to clear all filters
-function clearFilters() {
-    // Redirect to same page without any filter parameters
-    window.location.href = window.location.pathname;
-}
-</script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>RAM/SSD Stock | Mombasa Computers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* Same CSS as add_ram.php – include full responsive styles */
+        :root {
+            --primary: #1a4b2a;
+            --primary-light: #2a6b3a;
+            --primary-dark: #0f3a1e;
+            --info: #2563eb;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+            --radius-xl: 1rem;
+            --font-sans: 'Inter', system-ui, sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-sans); background: var(--gray-100); color: var(--gray-800); line-height: 1.5; overflow-x: hidden; }
+        .main-content { padding: 2rem 2rem 1rem; margin-left: 260px; width: calc(100% - 260px); min-height: 100vh; background: var(--gray-100); transition: all 0.3s ease; }
+        .page-header { background: white; padding: 1.5rem 2rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; box-shadow: var(--shadow-sm); border: 1px solid var(--gray-200); }
+        .page-header h1 { font-size: 1.75rem; color: var(--gray-800); font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .page-header h1 i { color: var(--primary); font-size: 1.75rem; }
+        .breadcrumb { color: var(--gray-500); font-size: 0.9rem; }
+        .breadcrumb a { color: var(--primary); text-decoration: none; }
+        .stats-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .stat-card { background: white; padding: 1rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); flex: 1; min-width: 150px; }
+        .stat-card .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--primary); }
+        .stat-card .stat-label { font-size: 0.8rem; color: var(--gray-500); }
+        .filter-form { background: white; padding: 1.25rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; border: 1px solid var(--gray-200); display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+        .filter-group { flex: 1; min-width: 180px; }
+        .filter-group label { display: block; font-size: 0.75rem; font-weight: 500; color: var(--gray-600); margin-bottom: 0.25rem; }
+        .filter-group select { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); font-size: 0.85rem; }
+        .btn { padding: 0.6rem 1.2rem; background: var(--primary); color: white; border: none; border-radius: var(--radius-md); cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500; text-decoration: none; }
+        .btn-secondary { background: var(--gray-500); }
+        .table-wrapper { background: white; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 700px; }
+        th { background: var(--gray-50); padding: 1rem; text-align: left; font-weight: 600; color: var(--gray-600); border-bottom: 1px solid var(--gray-200); white-space: nowrap; }
+        td { padding: 0.9rem 1rem; border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
+        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 500; background: var(--gray-100); }
+        .branch-kimathi { color: #059669; font-weight: 500; }
+        .branch-moi { color: #3b82f6; font-weight: 500; }
+        .empty-state { text-align: center; padding: 3rem; color: var(--gray-500); }
+        .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
+        @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
+        @media (max-width: 768px) { .filter-form { flex-direction: column; } .filter-group { min-width: auto; } .btn, .btn-secondary { width: 100%; justify-content: center; } }
+    </style>
 </head>
 <body>
-<div class="container">
-<a href="/inventory_system/dashboard/index.php" class="dashboard-btn">Dashboard</a>
-<h2>RAM & SSDs In Stock</h2>
-
-<div class="filter-box">
-    <form method="GET" id="filterForm">
-        <div class="filter-row">
-            <?php if($role === 'super_admin'): ?>
-            <div class="filter-group">
-                <label for="branch">Branch:</label>
-                <select name="branch" id="branch" onchange="autoSubmitForm()">
-                    <option value="">-- All Branches --</option>
-                    <?php foreach($available_branches as $branch): ?>
-                        <option value="<?= htmlspecialchars($branch) ?>" <?= $branch_filter==$branch?'selected':'' ?>>
-                            <?= htmlspecialchars($branch) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
+<div class="main-content">
+    <div class="page-header">
+        <h1><i class="fas fa-microchip"></i> RAM & SSD Stock</h1>
+        <div class="breadcrumb">
+            <?php if ($user_role === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php">Dashboard</a>
+            <?php elseif ($user_role === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php">Dashboard</a>
+            <?php else: ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php">Dashboard</a>
             <?php endif; ?>
-            
-            <div class="filter-group">
-                <label for="category">Category:</label>
-                <select name="category" id="category" onchange="autoSubmitForm()">
-                    <option value="">-- All Categories --</option>
-                    <?php foreach($available_categories as $category): ?>
-                        <option value="<?= htmlspecialchars($category) ?>" <?= $category_filter==$category?'selected':'' ?>>
-                            <?= htmlspecialchars($category) ?>
-                        </option>
-                    <?php endforeach; ?>
-                </select>
-            </div>
-            
-            <div class="filter-group" style="align-self: flex-end;">
-                <button type="button" onclick="clearFilters()" style="background: #dc3545;">Clear All</button>
-            </div>
+            <span> / </span>
+            <span>RAM/SSD In Stock</span>
         </div>
-        
-        <!-- Hidden submit button for accessibility (optional) -->
-        <button type="submit" style="display: none;">Apply Filters</button>
+    </div>
+
+    <div class="stats-row">
+        <div class="stat-card"><div class="stat-value"><?= count($stocks) ?></div><div class="stat-label">Unique Items</div></div>
+        <div class="stat-card"><div class="stat-value"><?= array_sum(array_column($stocks, 'quantity')) ?></div><div class="stat-label">Total Units</div></div>
+    </div>
+
+    <form method="GET" class="filter-form">
+        <?php if ($user_role === 'super_admin'): ?>
+        <div class="filter-group">
+            <label>Branch</label>
+            <select name="branch">
+                <option value="">All Branches</option>
+                <?php foreach ($branches as $b): ?>
+                    <option value="<?= htmlspecialchars($b) ?>" <?= $filter_branch == $b ? 'selected' : '' ?>><?= htmlspecialchars($b) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <?php endif; ?>
+        <div class="filter-group">
+            <label>Category</label>
+            <select name="category">
+                <option value="">All Categories</option>
+                <?php foreach ($categories as $c): ?>
+                    <option value="<?= htmlspecialchars($c) ?>" <?= $filter_category == $c ? 'selected' : '' ?>><?= htmlspecialchars($c) ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="filter-group">
+            <button type="submit" class="btn"><i class="fas fa-search"></i> Filter</button>
+            <a href="rams_instocks.php" class="btn btn-secondary" style="margin-left:0.5rem;">Reset</a>
+        </div>
     </form>
-    
-    <?php if($branch_filter || $category_filter): ?>
-        <div style="margin-top: 15px; padding: 10px; background: #e9ecef; border-radius: 5px;">
-            <strong>Active Filters:</strong>
-            <?php if($branch_filter): ?>
-                <span style="background: #2f7a3f; color: white; padding: 3px 8px; border-radius: 3px; margin: 0 5px;">
-                    Branch: <?= htmlspecialchars($branch_filter) ?>
-                </span>
+
+    <div class="table-wrapper">
+        <div class="table-responsive">
+            <?php if ($stocks): ?>
+                <table>
+                    <thead>
+                        <tr><th>#</th><th>Category</th><th>Type</th><th>Storage (GB)</th><th>Quantity</th><th>Branch</th><th>Last Updated By</th><th>Date Updated</th></tr>
+                    </thead>
+                    <tbody>
+                        <?php $i=1; foreach ($stocks as $r): ?>
+                            <tr>
+                                <td><?= $i++ ?></td>
+                                <td><span class="badge"><?= htmlspecialchars($r['category']) ?></span></td>
+                                <td><?= htmlspecialchars($r['type']) ?></td>
+                                <td><?= $r['storage'] ?></td>
+                                <td><strong><?= $r['quantity'] ?></strong></td>
+                                <td class="<?= $r['branch'] == 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>"><?= htmlspecialchars($r['branch']) ?></td>
+                                <td><?= htmlspecialchars($r['updated_by_name'] ?? 'N/A') ?></td>
+                                <td><?= date('M j, Y H:i', strtotime($r['date_updated'] ?? $r['date_added'])) ?></td>
+                            </tr>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <div class="empty-state"><i class="fas fa-box-open"></i><p>No RAM/SSD items in stock.</p></div>
             <?php endif; ?>
-            <?php if($category_filter): ?>
-                <span style="background: #17a2b8; color: white; padding: 3px 8px; border-radius: 3px; margin: 0 5px;">
-                    Category: <?= htmlspecialchars($category_filter) ?>
-                </span>
-            <?php endif; ?>
-            <a href="?" style="margin-left: 10px; color: #dc3545;">Clear All</a>
         </div>
-    <?php endif; ?>
+    </div>
+    <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
 
-<?php if($role === 'inventory_admin' && !$user_branch): ?>
-    <p style="color:#dc3545; text-align:center;">Your account is not assigned to any branch. Please contact administrator.</p>
-<?php endif; ?>
-
-<table>
-<tr>
-    <th>#</th>
-    <th>Category</th>
-    <th>Type</th>
-    <th>Storage</th>
-    <th>Quantity</th>
-    <th>Branch</th>
-    <th>Updated By</th>
-    <th>Date Updated</th>
-</tr>
-<?php if($stocks): $i=1; foreach($stocks as $r): ?>
-<tr>
-    <td><?= $i++ ?></td>
-    <td><?= htmlspecialchars($r['category']) ?></td>
-    <td><?= htmlspecialchars($r['type']) ?></td>
-    <td><?= $r['storage'] ?> GB</td>
-    <td><?= $r['quantity'] ?></td>
-    <td><?= htmlspecialchars($r['branch']) ?></td>
-    <td><?= htmlspecialchars($r['updated_by_name'] ?? 'N/A') ?></td>
-    <td><?= htmlspecialchars(date('Y-m-d H:i:s', strtotime($r['date_updated'] ?? $r['date_added']))) ?></td>
-</tr>
-<?php endforeach; else: ?>
-<tr><td colspan="8" style="text-align:center;">No RAM/SSD found</td></tr>
-<?php endif; ?>
-</table>
-
-<?php if($stocks): ?>
-<div style="margin-top: 20px; padding: 15px; background: #f4f7f6; border-radius: 5px;">
-    <strong>Summary:</strong> Total <?= count($stocks) ?> item(s) in stock
-    <?php 
-    // Calculate total quantity
-    $total_quantity = 0;
-    $category_summary = [];
-    foreach($stocks as $r) {
-        $total_quantity += $r['quantity'];
-        $category = $r['category'];
-        $category_summary[$category] = ($category_summary[$category] ?? 0) + $r['quantity'];
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    function adjustMainContent() {
+        const mainContent = document.querySelector('.main-content');
+        const sidebar = document.querySelector('.sidebar');
+        if (window.innerWidth <= 1200) {
+            if (mainContent) {
+                mainContent.style.marginLeft = '0';
+                mainContent.style.width = '100%';
+                mainContent.style.paddingTop = '5rem';
+            }
+        } else {
+            if (mainContent && sidebar) {
+                mainContent.style.marginLeft = '260px';
+                mainContent.style.width = 'calc(100% - 260px)';
+                mainContent.style.paddingTop = '';
+            }
+        }
     }
-    ?>
-    | Total Quantity: <?= $total_quantity ?>
-    
-    <?php if($category_filter === '' && count($category_summary) > 0): ?>
-        | 
-        <?php foreach($category_summary as $cat => $qty): ?>
-            <span style="margin: 0 10px;">
-                <?= htmlspecialchars($cat) ?>: <?= $qty ?>
-            </span>
-        <?php endforeach; ?>
-    <?php endif; ?>
-</div>
-<?php endif; ?>
-
-</div>
+    adjustMainContent();
+    window.addEventListener('resize', adjustMainContent);
+    window.addEventListener('orientationchange', adjustMainContent);
+});
+</script>
+<?php require_once "../includes/footer.php"; ?>
 </body>
 </html>
