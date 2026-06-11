@@ -2,185 +2,219 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
+require_once "../includes/header.php";
+require_once "../includes/sidebar.php";
 
-$role = $_SESSION['role'];
-$user_id = $_SESSION['user_id'];
-$branch = $_SESSION['branch'] ?? '';
+$user_role = $_SESSION['role'];
+$user_id = (int) $_SESSION['user_id'];
 
-// Ensure branch is set for inventory_admin and manager
-if (in_array($role, ['inventory_admin', 'manager']) && empty($branch)) {
-    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = :id");
-    $stmt->execute(['id' => $user_id]);
-    $branch = $stmt->fetchColumn();
-    $_SESSION['branch'] = $branch;
+if (!in_array($user_role, ['technician', 'super_admin', 'inventory_admin', 'manager'])) {
+    die("ACCESS DENIED.");
 }
 
-// Base WHERE
-$where = "r.fix_status = 'Not Fixed'";
+// Get user branch
+$user_branch = null;
+if ($user_role !== 'super_admin') {
+    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
+    $stmt->execute([$user_id]);
+    $user_branch = $stmt->fetchColumn();
+    if (!$user_branch && $user_role !== 'technician') {
+        die("Your account has no branch assigned.");
+    }
+}
+
+$sql = "SELECT r.*, d.model_name, d.processor, d.ram, d.storage_type, d.storage_capacity, d.touch, d.graphics,
+               c.category_name, u1.full_name AS added_by_name, u2.full_name AS given_by_name
+        FROM repairs r
+        JOIN devices d ON r.serial_number = d.serial_number
+        JOIN categories c ON d.category_id = c.id
+        LEFT JOIN users u1 ON r.added_by = u1.id
+        LEFT JOIN users u2 ON r.given_by = u2.id
+        WHERE r.fix_status = 'Not Fixed'";
 $params = [];
 
-// Role-based filters
-if ($role === 'technician') {
-    $where .= " AND r.added_by = :uid";
-    $params['uid'] = $user_id;
-} elseif (in_array($role, ['inventory_admin', 'manager'])) {
-    if (!empty($branch)) {
-        $where .= " AND r.branch = :branch";
-        $params['branch'] = $branch;
+if ($user_role === 'technician') {
+    $sql .= " AND r.added_by = ?";
+    $params[] = $user_id;
+} elseif (in_array($user_role, ['inventory_admin', 'manager'])) {
+    if ($user_branch) {
+        $sql .= " AND r.branch = ?";
+        $params[] = $user_branch;
     } else {
-        // Prevent showing repairs if branch is unknown
-        $where .= " AND 1=0";
+        $sql .= " AND 1=0";
     }
 }
-// Super admin sees all branches: no extra filter needed
+// Super admin sees all
 
-// Fetch repairs with given_by user name
-$sql = "
-SELECT 
-    r.id,
-    r.serial_number,
-    r.problem_description,
-    r.date_added,
-    r.branch,
-    r.given_by,
-    d.model_name,
-    d.processor,
-    d.ram,
-    d.storage_type,
-    d.storage_capacity,
-    d.touch,
-    d.graphics,
-    c.category_name,
-    u1.full_name AS added_by_name,
-    u2.full_name AS given_by_name
-FROM repairs r
-JOIN devices d ON r.serial_number = d.serial_number
-JOIN categories c ON d.category_id = c.id
-LEFT JOIN users u1 ON r.added_by = u1.id
-LEFT JOIN users u2 ON r.given_by = u2.id
-WHERE $where
-ORDER BY r.date_added DESC
-";
+$sql .= " ORDER BY r.date_added DESC";
+$stmt = $conn->prepare($sql);
+$stmt->execute($params);
+$repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-try {
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
-    $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (Exception $e) {
-    $error = "Database error: " . $e->getMessage();
-    $repairs = [];
-}
-
-// Mark repair as fixed (Technician only)
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['fix_id']) && $role === 'technician') {
-    $id = (int)$_POST['fix_id'];
+// Mark as fixed (technician only)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['fix_id']) && $user_role === 'technician') {
+    $fix_id = (int) $_POST['fix_id'];
     try {
         $conn->beginTransaction();
-        // Get serial number
-        $stmt = $conn->prepare("SELECT serial_number FROM repairs WHERE id = :id");
-        $stmt->execute(['id' => $id]);
+        $stmt = $conn->prepare("SELECT serial_number FROM repairs WHERE id = ?");
+        $stmt->execute([$fix_id]);
         $sn = $stmt->fetchColumn();
-
-        // Update repair
-        $stmt = $conn->prepare("UPDATE repairs SET fix_status = 'Fixed', date_fixed = NOW() WHERE id = :id");
-        $stmt->execute(['id' => $id]);
-
-        // Update device status
-        $stmt = $conn->prepare("UPDATE devices SET status = 'In Stock' WHERE serial_number = :sn");
-        $stmt->execute(['sn' => $sn]);
-
-        $conn->commit();
-        header("Location: under_repair.php");
-        exit;
+        if ($sn) {
+            $stmt = $conn->prepare("UPDATE repairs SET fix_status = 'Fixed', date_fixed = NOW() WHERE id = ?");
+            $stmt->execute([$fix_id]);
+            $stmt = $conn->prepare("UPDATE devices SET status = 'In Stock' WHERE serial_number = ?");
+            $stmt->execute([$sn]);
+            $conn->commit();
+            header("Location: under_repair.php");
+            exit;
+        }
     } catch (Exception $e) {
         $conn->rollBack();
-        $error = "Error updating repair: " . $e->getMessage();
+        $error = "Error: " . $e->getMessage();
     }
 }
+
+date_default_timezone_set('Africa/Nairobi');
+$hour = date('G');
+if ($hour < 12) $greeting = 'Good morning';
+elseif ($hour < 17) $greeting = 'Good afternoon';
+else $greeting = 'Good evening';
+$user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Under Repair - Inventory System</title>
-<style>
-body{font-family:Arial;background:#f4f6f8;margin:0;padding:0;}
-.container{max-width:1400px;margin:30px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}
-table{width:100%;border-collapse:collapse;margin-top:15px;}
-th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:1rem}
-th{background:#2f7a3f;color:#fff}
-button{padding:6px 10px;background:#2f7a3f;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:14px}
-button:hover{background:#1f5a2d}
-.dashboard-btn{display:inline-block;margin-bottom:15px;padding:8px 12px;background:#007bff;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px}
-.dashboard-btn:hover{background:#0056b3;text-decoration:none}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Under Repair | Mombasa Computers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary: #1a4b2a;
+            --primary-light: #2a6b3a;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-800: #1f2937;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --radius-xl: 1rem;
+            --font-sans: 'Inter', system-ui, sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-sans); background: var(--gray-100); color: var(--gray-800); line-height: 1.5; overflow-x: hidden; }
+        .main-content { padding: 2rem 2rem 1rem; margin-left: 260px; width: calc(100% - 260px); min-height: 100vh; background: var(--gray-100); transition: all 0.3s ease; }
+        .page-header { background: white; padding: 1.5rem 2rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; box-shadow: var(--shadow-sm); border: 1px solid var(--gray-200); }
+        .page-header h1 { font-size: 1.75rem; color: var(--gray-800); font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .page-header h1 i { color: var(--primary); font-size: 1.75rem; }
+        .breadcrumb { color: var(--gray-500); font-size: 0.9rem; }
+        .breadcrumb a { color: var(--primary); text-decoration: none; }
+        .stats-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .stat-card { background: white; padding: 1rem 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); flex: 1; min-width: 150px; }
+        .stat-card .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--primary); }
+        .stat-card .stat-label { font-size: 0.8rem; color: var(--gray-500); }
+        .table-wrapper { background: white; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 1000px; }
+        th { background: var(--gray-50); padding: 1rem; text-align: left; font-weight: 600; color: var(--gray-600); border-bottom: 1px solid var(--gray-200); }
+        td { padding: 0.9rem 1rem; border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
+        .badge { display: inline-block; padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; background: var(--gray-100); }
+        .btn { padding: 0.5rem 1rem; background: var(--primary); color: white; border: none; border-radius: 0.5rem; cursor: pointer; font-size: 0.8rem; }
+        .btn:hover { background: var(--primary-light); }
+        .empty-state { text-align: center; padding: 3rem; color: var(--gray-500); }
+        .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
+        @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
+        @media (max-width: 768px) { .stats-row { flex-direction: column; } }
+    </style>
 </head>
 <body>
-<div class="container">
-    <a href="/inventory_system/dashboard/index.php" class="dashboard-btn">Dashboard</a>
-    <h2 style="text-align:center; color:#2f7a3f">Devices Under Repair</h2>
-    
-    <?php if(isset($error)): ?>
-        <div style="color:red;padding:10px;background:#ffe6e6;border-radius:4px;margin-bottom:15px;">
-            <?= htmlspecialchars($error) ?>
+<div class="main-content">
+    <div class="page-header">
+        <h1><i class="fas fa-tools"></i> Devices Under Repair</h1>
+        <div class="breadcrumb">
+            <?php if ($user_role === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php">Dashboard</a>
+            <?php elseif ($user_role === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php">Dashboard</a>
+            <?php elseif ($user_role === 'inventory_admin'): ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php">Dashboard</a>
+            <?php else: ?>
+                <a href="/inventory_system/dashboard/techniaciandashboard.php">Dashboard</a>
+            <?php endif; ?>
+            <span> / </span>
+            <span>Under Repair</span>
         </div>
-    <?php endif; ?>
-    
-    <?php if(empty($repairs)): ?>
-        <p>No devices currently under repair.</p>
-    <?php else: ?>
-        <table>
-            <tr>
-                <th>#</th>
-                <th>Serial</th>
-                <th>Category</th>
-                <th>Model</th>
-                <th>Processor</th>
-                <th>RAM</th>
-                <th>Storage</th>
-                <th>Touch</th>
-                <th>Graphics</th>
-                <th>Problem</th>
-                <th>Given By</th>
-                <?php if(in_array($role, ['super_admin','inventory_admin','manager'])): ?>
-                    <th>Added By</th>
-                    <th>Branch</th>
-                    <th>Date Added</th>
-                <?php endif; ?>
-                <?php if($role==='technician'): ?>
-                    <th>Action</th>
-                <?php endif; ?>
-            </tr>
-            <?php foreach($repairs as $i=>$r): ?>
-            <tr>
-                <td><?= $i+1 ?></td>
-                <td><?= htmlspecialchars($r['serial_number']) ?></td>
-                <td><?= htmlspecialchars($r['category_name']) ?></td>
-                <td><?= htmlspecialchars($r['model_name']) ?></td>
-                <td><?= htmlspecialchars($r['processor']) ?></td>
-                <td><?= htmlspecialchars($r['ram']) ?>GB</td>
-                <td><?= htmlspecialchars($r['storage_type'].' '.$r['storage_capacity'].'GB') ?></td>
-                <td><?= htmlspecialchars($r['touch'] ?? 'N/A') ?></td>
-                <td><?= htmlspecialchars($r['graphics']) ?></td>
-                <td><?= htmlspecialchars($r['problem_description']) ?></td>
-                <td><?= htmlspecialchars($r['given_by_name'] ?? 'Unknown') ?></td>
-                <?php if(in_array($role, ['super_admin','inventory_admin','manager'])): ?>
-                    <td><?= htmlspecialchars($r['added_by_name'] ?? 'Unknown') ?></td>
-                    <td><?= htmlspecialchars($r['branch'] ?? 'N/A') ?></td>
-                    <td><?= date('Y-m-d H:i', strtotime($r['date_added'])) ?></td>
-                <?php endif; ?>
-                <?php if($role==='technician'): ?>
-                    <td>
-                        <form method="post" onsubmit="return confirm('Mark this device as fixed?');">
-                            <input type="hidden" name="fix_id" value="<?= $r['id'] ?>">
-                            <button type="submit">Mark as Fixed</button>
-                        </form>
-                    </td>
-                <?php endif; ?>
-            </tr>
-            <?php endforeach; ?>
-        </table>
-    <?php endif; ?>
+    </div>
+
+    <div class="stats-row">
+        <div class="stat-card"><div class="stat-value"><?= count($repairs) ?></div><div class="stat-label">Devices Under Repair</div></div>
+    </div>
+
+    <div class="table-wrapper">
+        <?php if (empty($repairs)): ?>
+            <div class="empty-state"><i class="fas fa-check-circle"></i><p>No devices currently under repair.</p></div>
+        <?php else: ?>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Serial</th>
+                        <th>Category</th>
+                        <th>Model</th>
+                        <th>Problem</th>
+                        <th>Given By</th>
+                        <?php if (in_array($user_role, ['super_admin', 'inventory_admin', 'manager'])): ?>
+                            <th>Added By</th>
+                            <th>Branch</th>
+                            <th>Date Added</th>
+                        <?php endif; ?>
+                        <?php if ($user_role === 'technician'): ?>
+                            <th>Action</th>
+                        <?php endif; ?>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php $i=1; foreach ($repairs as $r): ?>
+                    <tr>
+                        <td><?= $i++ ?></td>
+                        <td><code><?= htmlspecialchars($r['serial_number']) ?></code></td>
+                        <td><span class="badge"><?= htmlspecialchars($r['category_name']) ?></span></td>
+                        <td><?= htmlspecialchars($r['model_name']) ?></td>
+                        <td><?= htmlspecialchars($r['problem_description']) ?></td>
+                        <td><?= htmlspecialchars($r['given_by_name'] ?? 'Unknown') ?></td>
+                        <?php if (in_array($user_role, ['super_admin', 'inventory_admin', 'manager'])): ?>
+                            <td><?= htmlspecialchars($r['added_by_name'] ?? 'Unknown') ?></td>
+                            <td><span class="badge"><?= htmlspecialchars($r['branch']) ?></span></td>
+                            <td><?= date('M j, Y H:i', strtotime($r['date_added'])) ?></td>
+                        <?php endif; ?>
+                        <?php if ($user_role === 'technician'): ?>
+                            <td>
+                                <form method="POST" onsubmit="return confirm('Mark this device as fixed? The device will return to In Stock status.');">
+                                    <input type="hidden" name="fix_id" value="<?= $r['id'] ?>">
+                                    <button type="submit" class="btn">Mark as Fixed</button>
+                                </form>
+                            </td>
+                        <?php endif; ?>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+    <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
+
+<script>
+function adjustMainContent() {
+    const main = document.querySelector('.main-content');
+    if (window.innerWidth <= 1200) main.style.marginLeft = '0';
+    else main.style.marginLeft = '260px';
+}
+window.addEventListener('resize', adjustMainContent);
+adjustMainContent();
+</script>
+<?php require_once "../includes/footer.php"; ?>
 </body>
 </html>

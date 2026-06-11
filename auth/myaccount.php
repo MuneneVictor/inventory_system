@@ -722,11 +722,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
                             <i class="fas fa-users"></i> View All Users
                         </a>
                     <?php endif; ?>
-                    
-                    <a href="/inventory_system/dashboard/index.php" class="btn btn-secondary">
-                        <i class="fas fa-tachometer-alt"></i> Go to Dashboard
-                    </a>
-                    
+                     <?php if($_SESSION['role'] === 'super_admin'): ?>
+                    <a href="/inventory_system/dashboard/superadmindashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>       
+                    <?php endif; ?>
+                    <?php if($_SESSION['role'] === 'manager'): ?>
+                        <a href="/inventory_system/dashboard/managerdashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    <?php endif; ?>
+                    <?php if($_SESSION['role'] === 'inventory_admin'): ?>
+                        <a href="/inventory_system/dashboard/inventorydashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    <?php endif; ?>
+                    <?php if($_SESSION['role'] === 'sales'): ?>
+                        <a href="/inventory_system/dashboard/salesdashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    <?php endif; ?>
+                    <?php if($_SESSION['role'] === 'software'): ?>
+                        <a href="/inventory_system/dashboard/softwaredashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    <?php endif; ?>
+                    <?php if($_SESSION['role'] === 'technician'): ?>
+                        <a href="/inventory_system/dashboard/techniciandashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    <?php endif; ?>
+                    <?php if($_SESSION['role'] === 'cashier'): ?>
+                        <a href="/inventory_system/dashboard/cashierdashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                    <?php endif; ?>
                     <a href="../auth/logout.php" class="btn btn-danger" onclick="return confirm('Are you sure you want to logout?')">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>

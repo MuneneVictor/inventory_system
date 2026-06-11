@@ -2,296 +2,250 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
+require_once "../includes/header.php";
+require_once "../includes/sidebar.php";
 
-$role = $_SESSION['role'];
-$user_id = $_SESSION['user_id'];
-$branch = $_SESSION['branch'] ?? '';
+$user_role = $_SESSION['role'];
+$user_id = (int) $_SESSION['user_id'];
 
-// Fetch branch for inventory_admin or manager if not in session
-if (empty($branch) && in_array($role, ['inventory_admin', 'manager'])) {
-    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = :id");
-    $stmt->execute(['id' => $user_id]);
-    $branch = $stmt->fetchColumn();
-    $_SESSION['branch'] = $branch;
+if (!in_array($user_role, ['super_admin', 'inventory_admin', 'manager', 'technician'])) {
+    die("ACCESS DENIED.");
 }
 
-// Get filter values from GET request
-$serial_search = $_GET['serial'] ?? '';
-$branch_filter = $_GET['branch_filter'] ?? '';
-$date_from = $_GET['date_from'] ?? '';
-$date_to = $_GET['date_to'] ?? '';
+// Get user branch for non-super_admin
+$user_branch = null;
+if ($user_role !== 'super_admin') {
+    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
+    $stmt->execute([$user_id]);
+    $user_branch = $stmt->fetchColumn();
+}
 
-// Build WHERE clause
-$where = "r.fix_status = 'Fixed'";
+// Filter inputs
+$filter_serial = trim($_GET['serial'] ?? '');
+$filter_branch = trim($_GET['branch'] ?? '');
+$filter_start = trim($_GET['start_date'] ?? '');
+$filter_end = trim($_GET['end_date'] ?? '');
+
+$sql = "SELECT r.*, d.model_name, d.processor, d.ram, d.storage_type, d.storage_capacity, d.touch, d.graphics,
+               c.category_name, u1.full_name AS fixed_by_name, u2.full_name AS given_by_name
+        FROM repairs r
+        JOIN devices d ON r.serial_number = d.serial_number
+        JOIN categories c ON d.category_id = c.id
+        LEFT JOIN users u1 ON r.added_by = u1.id
+        LEFT JOIN users u2 ON r.given_by = u2.id
+        WHERE r.fix_status = 'Fixed'";
 $params = [];
 
-if ($role === 'technician') {
-    $where .= " AND r.added_by = :uid";
-    $params['uid'] = $user_id;
-} elseif (in_array($role, ['inventory_admin', 'manager'])) {
-    if (!empty($branch)) {
-        $where .= " AND r.branch = :branch";
-        $params['branch'] = $branch;
+if ($user_role === 'technician') {
+    $sql .= " AND r.added_by = ?";
+    $params[] = $user_id;
+} elseif (in_array($user_role, ['inventory_admin', 'manager'])) {
+    if ($user_branch) {
+        $sql .= " AND r.branch = ?";
+        $params[] = $user_branch;
+    } else {
+        $sql .= " AND 1=0";
     }
 }
-// Super admin sees all branches
 
-// Apply search filters
-if (!empty($serial_search)) {
-    $where .= " AND r.serial_number LIKE :serial";
-    $params['serial'] = '%' . $serial_search . '%';
+if (!empty($filter_serial)) {
+    $sql .= " AND r.serial_number LIKE ?";
+    $params[] = "%$filter_serial%";
+}
+if ($user_role === 'super_admin' && !empty($filter_branch)) {
+    $sql .= " AND r.branch = ?";
+    $params[] = $filter_branch;
+}
+if (!empty($filter_start) && !empty($filter_end)) {
+    $sql .= " AND DATE(r.date_fixed) BETWEEN ? AND ?";
+    $params[] = $filter_start;
+    $params[] = $filter_end;
+} elseif (!empty($filter_start)) {
+    $sql .= " AND DATE(r.date_fixed) >= ?";
+    $params[] = $filter_start;
+} elseif (!empty($filter_end)) {
+    $sql .= " AND DATE(r.date_fixed) <= ?";
+    $params[] = $filter_end;
 }
 
-if ($role === 'super_admin' && !empty($branch_filter)) {
-    $where .= " AND r.branch = :branch_filter";
-    $params['branch_filter'] = $branch_filter;
+$sql .= " ORDER BY r.date_fixed DESC";
+$stmt = $conn->prepare($sql);
+$stmt->execute($params);
+$repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Get branches for super_admin filter
+$branches = [];
+if ($user_role === 'super_admin') {
+    $branchStmt = $conn->query("SELECT DISTINCT branch FROM repairs WHERE branch IS NOT NULL ORDER BY branch");
+    $branches = $branchStmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
-if (!empty($date_from) && !empty($date_to)) {
-    $where .= " AND DATE(r.date_fixed) BETWEEN :date_from AND :date_to";
-    $params['date_from'] = $date_from;
-    $params['date_to'] = $date_to;
-} elseif (!empty($date_from)) {
-    $where .= " AND DATE(r.date_fixed) >= :date_from";
-    $params['date_from'] = $date_from;
-} elseif (!empty($date_to)) {
-    $where .= " AND DATE(r.date_fixed) <= :date_to";
-    $params['date_to'] = $date_to;
-}
-
-// Get all branches for super admin filter
-$all_branches = [];
-if ($role === 'super_admin') {
-    $stmt = $conn->query("SELECT DISTINCT branch FROM repairs WHERE branch IS NOT NULL ORDER BY branch");
-    $all_branches = $stmt->fetchAll(PDO::FETCH_COLUMN);
-}
-
-// Fetch repairs
-$sql = "
-SELECT 
-    r.id,
-    r.serial_number,
-    r.problem_description,
-    r.fix_status,
-    r.date_fixed,
-    r.branch,
-    r.given_by,
-    d.model_name,
-    d.processor,
-    d.ram,
-    d.storage_type,
-    d.storage_capacity,
-    d.touch,
-    d.graphics,
-    c.category_name,
-    u1.full_name as fixed_by_name,
-    u2.full_name as given_by_name
-FROM repairs r
-JOIN devices d ON r.serial_number = d.serial_number
-JOIN categories c ON d.category_id = c.id
-LEFT JOIN users u1 ON r.added_by = u1.id
-LEFT JOIN users u2 ON r.given_by = u2.id
-WHERE $where
-ORDER BY r.date_fixed DESC
-";
-
-try {
-    $stmt = $conn->prepare($sql);
-    $stmt->execute($params);
-    $repairs = $stmt->fetchAll();
-} catch (Exception $e) {
-    $error = "Database error: " . $e->getMessage();
-    $repairs = [];
-}
+date_default_timezone_set('Africa/Nairobi');
+$hour = date('G');
+if ($hour < 12) $greeting = 'Good morning';
+elseif ($hour < 17) $greeting = 'Good afternoon';
+else $greeting = 'Good evening';
+$user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<title>Repair Logs - Inventory System</title>
-<style>
-body{font-family:Arial;background:#f4f6f8;margin:0;padding:0;}
-.container{max-width:1400px;margin:30px auto;background:#fff;padding:20px;border-radius:8px;box-shadow:0 2px 10px rgba(0,0,0,0.1);}
-table{width:100%;border-collapse:collapse;margin-top:15px;}
-th,td{border:1px solid #ccc;padding:8px;text-align:left;font-size:1rem}
-th{background:#2f7a3f;color:#fff}
-.dashboard-btn{display:inline-block;margin-bottom:15px;padding:8px 12px;background:#007bff;color:#fff;border-radius:6px;text-decoration:none;font-weight:bold;font-size:14px}
-.dashboard-btn:hover{background:#0056b3;text-decoration:none}
-.filter-container{background:#f9f9f9;padding:15px;border-radius:5px;margin-bottom:20px;border:1px solid #ddd}
-.filter-row{display:flex;flex-wrap:wrap;gap:15px;align-items:center;margin-bottom:10px}
-.filter-group{display:flex;flex-direction:column;min-width:200px}
-.filter-group label{font-size:0.9rem;font-weight:bold;margin-bottom:5px;color:#333}
-.filter-group input, .filter-group select{padding:8px;border:1px solid #ccc;border-radius:4px;font-size:0.9rem}
-.filter-actions{display:flex;gap:10px;margin-top:10px}
-.reset-btn{background:#6c757d;color:#fff;padding:8px 12px;border:none;border-radius:4px;cursor:pointer;font-size:0.9rem;text-decoration:none;display:inline-block}
-.reset-btn:hover{background:#5a6268}
-.search-btn{background:#2f7a3f;color:#fff;padding:8px 12px;border:none;border-radius:4px;cursor:pointer;font-size:0.9rem}
-.search-btn:hover{background:#1f5a2d}
-.results-info{background:#e9f7ef;padding:10px;border-radius:4px;margin-bottom:15px;border:1px solid #c3e6cb}
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Repair Logs | Mombasa Computers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary: #1a4b2a;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-800: #1f2937;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --radius-md: 0.5rem;
+            --radius-xl: 1rem;
+            --font-sans: 'Inter', system-ui, sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-sans); background: var(--gray-100); color: var(--gray-800); line-height: 1.5; overflow-x: hidden; }
+        .main-content { padding: 2rem 2rem 1rem; margin-left: 260px; width: calc(100% - 260px); min-height: 100vh; background: var(--gray-100); transition: all 0.3s ease; }
+        .page-header { background: white; padding: 1.5rem 2rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; box-shadow: var(--shadow-sm); border: 1px solid var(--gray-200); }
+        .page-header h1 { font-size: 1.75rem; color: var(--gray-800); font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .page-header h1 i { color: var(--primary); font-size: 1.75rem; }
+        .breadcrumb { color: var(--gray-500); font-size: 0.9rem; }
+        .breadcrumb a { color: var(--primary); text-decoration: none; }
+        .stats-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .stat-card { background: white; padding: 1rem 1.5rem; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); flex: 1; min-width: 150px; }
+        .stat-card .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--primary); }
+        .stat-card .stat-label { font-size: 0.8rem; color: var(--gray-500); }
+        .filter-section { background: white; padding: 1.5rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; box-shadow: var(--shadow-sm); border: 1px solid var(--gray-200); }
+        .filter-title { font-size: 1rem; font-weight: 500; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+        .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; align-items: flex-end; }
+        .filter-group { display: flex; flex-direction: column; gap: 0.5rem; }
+        .filter-group label { font-size: 0.85rem; font-weight: 500; color: var(--gray-600); }
+        .filter-group input, .filter-group select { padding: 0.625rem 0.875rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); font-size: 0.9rem; background: white; }
+        .btn { padding: 0.625rem 1.25rem; background: var(--primary); color: white; border: none; border-radius: var(--radius-md); cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; text-decoration: none; }
+        .btn-secondary { background: var(--gray-500); }
+        .table-wrapper { background: white; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 1100px; }
+        th { background: var(--gray-50); padding: 1rem; text-align: left; font-weight: 600; color: var(--gray-600); border-bottom: 1px solid var(--gray-200); }
+        td { padding: 0.9rem 1rem; border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
+        .badge { display: inline-block; padding: 0.25rem 0.625rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; background: var(--gray-100); }
+        .empty-state { text-align: center; padding: 3rem; color: var(--gray-500); }
+        .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
+        @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
+        @media (max-width: 768px) { .filter-grid { grid-template-columns: 1fr; } .btn { width: 100%; justify-content: center; } .stats-row { flex-direction: column; } }
+    </style>
 </head>
 <body>
-<div class="container">
-    <a href="/inventory_system/dashboard/index.php" class="dashboard-btn">Dashboard</a>
-    <h2 style="text-align:center; color:#2f7a3f">Repair Logs</h2>
-
-    <?php if(isset($error)): ?>
-        <div style="color:red;padding:10px;background:#ffe6e6;border-radius:4px;margin-bottom:15px;">
-            <?= htmlspecialchars($error) ?>
+<div class="main-content">
+    <div class="page-header">
+        <h1><i class="fas fa-history"></i> Repair Logs (Fixed Devices)</h1>
+        <div class="breadcrumb">
+            <?php if ($user_role === 'super_admin'): ?>
+                <a href="/inventory_system/dashboard/superadmindashboard.php">Dashboard</a>
+            <?php elseif ($user_role === 'manager'): ?>
+                <a href="/inventory_system/dashboard/managerdashboard.php">Dashboard</a>
+            <?php elseif ($user_role === 'inventory_admin'): ?>
+                <a href="/inventory_system/dashboard/inventorydashboard.php">Dashboard</a>
+            <?php else: ?>
+                <a href="/inventory_system/dashboard/techniaciandashboard.php">Dashboard</a>
+            <?php endif; ?>
+            <span> / </span>
+            <span>Repair Logs</span>
         </div>
-    <?php endif; ?>
+    </div>
 
-    <!-- Filter Form -->
-    <div class="filter-container">
-        <form method="GET" action="" id="filterForm">
-            <div class="filter-row">
-                <!-- Serial Number Search -->
+    <div class="stats-row">
+        <div class="stat-card"><div class="stat-value"><?= count($repairs) ?></div><div class="stat-label">Fixed Devices</div></div>
+    </div>
+
+    <div class="filter-section">
+        <div class="filter-title"><i class="fas fa-filter"></i> Filter Logs</div>
+        <form method="GET" class="filter-grid">
+            <div class="filter-group">
+                <label>Serial Number</label>
+                <input type="text" name="serial" placeholder="Search by serial..." value="<?= htmlspecialchars($filter_serial) ?>">
+            </div>
+            <?php if ($user_role === 'super_admin'): ?>
                 <div class="filter-group">
-                    <label for="serial">Search by Serial Number:</label>
-                    <input type="text" id="serial" name="serial" 
-                           value="<?= htmlspecialchars($serial_search) ?>" 
-                           placeholder="Scan or type serial number"
-                           autofocus>
-                </div>
-                
-                <!-- Branch Filter (Super Admin only) -->
-                <?php if($role === 'super_admin'): ?>
-                <div class="filter-group">
-                    <label for="branch_filter">Filter by Branch:</label>
-                    <select id="branch_filter" name="branch_filter" onchange="this.form.submit()">
+                    <label>Branch</label>
+                    <select name="branch">
                         <option value="">All Branches</option>
-                        <?php foreach($all_branches as $br): ?>
-                            <option value="<?= htmlspecialchars($br) ?>" 
-                                <?= $branch_filter === $br ? 'selected' : '' ?>>
-                                <?= htmlspecialchars($br) ?>
-                            </option>
+                        <?php foreach ($branches as $b): ?>
+                            <option value="<?= htmlspecialchars($b) ?>" <?= $filter_branch == $b ? 'selected' : '' ?>><?= htmlspecialchars($b) ?></option>
                         <?php endforeach; ?>
                     </select>
                 </div>
-                <?php endif; ?>
-                
-                <!-- Date Range Filters -->
-                <div class="filter-group">
-                    <label for="date_from">Date Fixed From:</label>
-                    <input type="date" id="date_from" name="date_from" 
-                           value="<?= htmlspecialchars($date_from) ?>" 
-                           onchange="document.getElementById('date_to').min=this.value">
-                </div>
-                
-                <div class="filter-group">
-                    <label for="date_to">Date Fixed To:</label>
-                    <input type="date" id="date_to" name="date_to" 
-                           value="<?= htmlspecialchars($date_to) ?>"
-                           onchange="this.form.submit()">
-                </div>
+            <?php endif; ?>
+            <div class="filter-group">
+                <label>From Date</label>
+                <input type="date" name="start_date" value="<?= htmlspecialchars($filter_start) ?>">
             </div>
-            
-            <div class="filter-actions">
-                <button type="submit" class="search-btn">Search</button>
-                <a href="repair_logs.php" class="reset-btn">Reset Filters</a>
+            <div class="filter-group">
+                <label>To Date</label>
+                <input type="date" name="end_date" value="<?= htmlspecialchars($filter_end) ?>">
+            </div>
+            <div class="filter-group">
+                <button type="submit" class="btn"><i class="fas fa-search"></i> Filter</button>
+                <a href="repair_logs.php" class="btn btn-secondary" style="margin-left:0.5rem;">Reset</a>
             </div>
         </form>
     </div>
-    
-    <?php if(!empty($serial_search) || !empty($branch_filter) || !empty($date_from) || !empty($date_to)): ?>
-        <div class="results-info">
-            <strong>Active Filters:</strong>
-            <?php 
-            $filters = [];
-            if (!empty($serial_search)) $filters[] = "Serial contains: '$serial_search'";
-            if ($role === 'super_admin' && !empty($branch_filter)) $filters[] = "Branch: $branch_filter";
-            if (!empty($date_from)) $filters[] = "From: $date_from";
-            if (!empty($date_to)) $filters[] = "To: $date_to";
-            echo implode(' | ', $filters);
-            ?>
-            | <strong>Results:</strong> <?= count($repairs) ?> device(s)
-        </div>
-    <?php endif; ?>
 
-    <?php if(empty($repairs)): ?>
-        <p>No repaired devices found.</p>
-    <?php else: ?>
-        <table>
-            <tr>
-                <th>#</th>
-                <th>Serial</th>
-                <th>Category</th>
-                <th>Model</th>
-                <th>Processor</th>
-                <th>RAM</th>
-                <th>Storage</th>
-                <th>Touch</th>
-                <th>Graphics</th>
-                <th>Problem</th>
-                <th>Fixed By</th>
-                <th>Given By</th>
-                <th>Fix Status</th>
-                <th>Branch</th>
-                <th>Date Fixed</th>
-            </tr>
-            <?php foreach($repairs as $i=>$r): ?>
-            <tr>
-                <td><?= $i+1 ?></td>
-                <td><?= htmlspecialchars($r['serial_number']) ?></td>
-                <td><?= htmlspecialchars($r['category_name']) ?></td>
-                <td><?= htmlspecialchars($r['model_name']) ?></td>
-                <td><?= htmlspecialchars($r['processor']) ?></td>
-                <td><?= htmlspecialchars($r['ram']) ?>GB</td>
-                <td><?= htmlspecialchars($r['storage_type'].' '.$r['storage_capacity'].'GB') ?></td>
-                <td><?= htmlspecialchars($r['touch'] ?? 'N/A') ?></td>
-                <td><?= htmlspecialchars($r['graphics']) ?></td>
-                <td><?= htmlspecialchars($r['problem_description']) ?></td>
-                <td><?= htmlspecialchars($r['fixed_by_name'] ?? 'Unknown') ?></td>
-                <td><?= htmlspecialchars($r['given_by_name'] ?? 'Unknown') ?></td>
-                <td><?= htmlspecialchars($r['fix_status']) ?></td>
-                <td><?= htmlspecialchars($r['branch']) ?></td>
-                <td><?= $r['date_fixed'] ? date('Y-m-d H:i', strtotime($r['date_fixed'])) : '-' ?></td>
-            </tr>
-            <?php endforeach; ?>
-        </table>
-    <?php endif; ?>
+    <div class="table-wrapper">
+        <?php if (empty($repairs)): ?>
+            <div class="empty-state"><i class="fas fa-clipboard-list"></i><p>No repair logs found.</p></div>
+        <?php else: ?>
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Serial</th>
+                        <th>Category</th>
+                        <th>Model</th>
+                        <th>Problem</th>
+                        <th>Given By</th>
+                        <th>Fixed By</th>
+                        <th>Branch</th>
+                        <th>Date Fixed</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php $i=1; foreach ($repairs as $r): ?>
+                    <tr>
+                        <td><?= $i++ ?></td>
+                        <td><code><?= htmlspecialchars($r['serial_number']) ?></code></td>
+                        <td><span class="badge"><?= htmlspecialchars($r['category_name']) ?></span></td>
+                        <td><?= htmlspecialchars($r['model_name']) ?></td>
+                        <td><?= htmlspecialchars($r['problem_description']) ?></td>
+                        <td><?= htmlspecialchars($r['given_by_name'] ?? 'Unknown') ?></td>
+                        <td><?= htmlspecialchars($r['fixed_by_name'] ?? 'Unknown') ?></td>
+                        <td><span class="badge"><?= htmlspecialchars($r['branch']) ?></span></td>
+                        <td><?= date('M j, Y H:i', strtotime($r['date_fixed'])) ?></td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php endif; ?>
+    </div>
+    <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
 
 <script>
-// Auto-focus on serial input and allow scanning
-document.addEventListener('DOMContentLoaded', function() {
-    const serialInput = document.getElementById('serial');
-    if (serialInput) {
-        serialInput.focus();
-        
-        // Allow scanning by listening for Enter key
-        serialInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                this.form.submit();
-            }
-        });
-    }
-    
-    // Set date_to to today if not set
-    const dateToInput = document.getElementById('date_to');
-    const dateFromInput = document.getElementById('date_from');
-    
-    if (dateToInput && !dateToInput.value) {
-        const today = new Date().toISOString().split('T')[0];
-        dateToInput.value = today;
-        dateToInput.min = dateFromInput ? dateFromInput.value : '';
-    }
-    
-    // Set min date for date_to based on date_from
-    if (dateFromInput && dateToInput) {
-        dateToInput.min = dateFromInput.value;
-    }
-    
-    // Auto-submit when date_from changes (only if date_to is set)
-    if (dateFromInput) {
-        dateFromInput.addEventListener('change', function() {
-            if (this.value && document.getElementById('date_to').value) {
-                setTimeout(() => document.getElementById('filterForm').submit(), 300);
-            }
-        });
-    }
-});
+function adjustMainContent() {
+    const main = document.querySelector('.main-content');
+    if (window.innerWidth <= 1200) main.style.marginLeft = '0';
+    else main.style.marginLeft = '260px';
+}
+window.addEventListener('resize', adjustMainContent);
+adjustMainContent();
 </script>
+<?php require_once "../includes/footer.php"; ?>
 </body>
 </html>
