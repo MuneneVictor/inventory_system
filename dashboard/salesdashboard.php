@@ -349,7 +349,6 @@ $stmt = safeQuery($conn, "
     SELECT 
         cl.*,
         c.charger_type,
-        c.watts,
         c.charger_condition,
         u.full_name AS given_by_name
     FROM charger_logs cl 
@@ -363,7 +362,7 @@ if ($stmt) {
     $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     foreach ($rows as $row) {
         $recentChargersGivenToMe[] = [
-            'charger_label' => trim(($row['charger_type'] ?? 'Charger') . ($row['watts'] ? " {$row['watts']}W" : '')),
+            'charger_label' => trim(($row['charger_type'] ?? 'Charger')),
             'quantity_given' => (int)($row['quantity'] ?? 0),
             'given_by_name'  => $row['given_by_name'] ?? '-',
             'branch'         => $row['branch'] ?? null,
@@ -833,6 +832,9 @@ $myTodayRevenueJS = $myTodayRevenue;
     <!-- Recently Sold Items -->
     <div class="section">
         <h4><i class="fas fa-clock"></i> Recently Sold Items</h4>
+         <a href="../sales/my_sales.php" class="link-btn" style="font-size:0.8rem; padding:0.3rem 0.8rem; background:#2563eb;">
+                <i class="fas fa-eye"></i> View All
+            </a>
         <div class="table-responsive">
             <table class="table">
                 <thead>
@@ -861,6 +863,9 @@ $myTodayRevenueJS = $myTodayRevenue;
     <div class="two-col-grid">
         <div class="section" style="margin-bottom:0;">
             <h4><i class="fas fa-memory"></i> Recently Received RAM/SSD</h4>
+             <a href="../ram_ssd/ram_ssd_logs.php" class="link-btn" style="font-size:0.8rem; padding:0.3rem 0.8rem; background:#2563eb;">
+                <i class="fas fa-eye"></i> View All
+            </a>
             <div class="table-responsive">
                 <table class="table">
                     <thead><tr><th>Item</th><th>Storage</th><th>Qty</th><th>From</th><th>Date</th></tr></thead>
@@ -885,6 +890,9 @@ $myTodayRevenueJS = $myTodayRevenue;
 
         <div class="section" style="margin-bottom:0;">
             <h4><i class="fas fa-bolt"></i> Recently Received Chargers</h4>
+            <a href="../ram_ssd/ram_ssd_logs.php" class="link-btn" style="font-size:0.8rem; padding:0.3rem 0.8rem; background:#2563eb;">
+                <i class="fas fa-eye"></i> View All
+            </a>
             <div class="table-responsive">
                 <table class="table">
                     <thead><tr><th>Charger</th><th>Condition</th><th>Qty</th><th>From</th><th>Date</th></tr></thead>
