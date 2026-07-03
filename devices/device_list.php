@@ -80,7 +80,7 @@ $sql .= " ORDER BY d.date_added DESC";
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
-require_once "../includes/sidebar.php";
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -523,7 +523,7 @@ require_once "../includes/sidebar.php";
     </style>
 </head>
 <body>
-
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <!-- Page Header -->
     <div class="page-header">

@@ -130,8 +130,7 @@ if (isset($_GET['success'])) {
 }
 
 // Now include header and sidebar (after all processing)
-require_once "../includes/header.php";
-require_once "../includes/sidebar.php";
+
 
 // Get filter inputs
 $filter_branch = trim($_GET['branch'] ?? '');
@@ -550,7 +549,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     </style>
 </head>
 <body>
-
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-history"></i> RAM/SSD Logs</h1>

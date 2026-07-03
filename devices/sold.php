@@ -2,8 +2,7 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
-require_once "../includes/header.php";
-require_once "../includes/sidebar.php";
+
 
 $role = $_SESSION['role'];
 $user_id = $_SESSION['user_id'];
@@ -625,7 +624,7 @@ $showDownloadButton = ($search_time && !$search_salesperson) || ($search_branch 
     </script>
 </head>
 <body>
-
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <!-- Page Header -->
     <div class="page-header">

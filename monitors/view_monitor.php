@@ -2,8 +2,7 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
-require_once "../includes/header.php";
-require_once "../includes/sidebar.php";
+
 
 if (!isset($_GET['sn'])) die("Serial number not provided!");
 
@@ -88,6 +87,7 @@ else $greeting = 'Good evening';
     </style>
 </head>
 <body>
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-desktop"></i> Monitor Details <span class="serial-code"><?= htmlspecialchars($monitor['serial_number']) ?></span></h1>

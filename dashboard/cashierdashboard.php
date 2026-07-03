@@ -450,7 +450,7 @@ if ($hour < 12) $greeting = 'Good morning';
 elseif ($hour < 17) $greeting = 'Good afternoon';
 else $greeting = 'Good evening';
 
-require_once "../includes/sidebar.php";
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -921,7 +921,7 @@ require_once "../includes/sidebar.php";
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body>
-
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="header-row">
         <div>
