@@ -142,8 +142,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Include headers AFTER all processing is done (no output before this)
-require_once "../includes/header.php";
-require_once "../includes/sidebar.php";
+
 ?>
 
 <!DOCTYPE html>
@@ -502,7 +501,7 @@ require_once "../includes/sidebar.php";
     </style>
 </head>
 <body>
-
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <!-- Page Header -->
     <div class="page-header">

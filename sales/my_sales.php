@@ -3,6 +3,7 @@ session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 
+
 // Only sales role can access
 if ($_SESSION['role'] !== 'sales') {
     die("ACCESS DENIED. Only sales personnel can view their sales.");
@@ -334,7 +335,7 @@ else $greeting = 'Good evening';
     </style>
 </head>
 <body>
-    <?php include "../includes/sidebar.php"; ?>
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-chart-line"></i> My Sales</h1>

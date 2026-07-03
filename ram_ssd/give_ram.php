@@ -2,8 +2,7 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
-require_once "../includes/header.php";
-require_once "../includes/sidebar.php";
+
 
 if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin'])) {
     die("ACCESS DENIED. Only Inventory Admin or Super Admin can give out RAM/SSD.");
@@ -170,6 +169,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     </style>
 </head>
 <body>
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-gift"></i> Give Out RAM/SSD</h1>
