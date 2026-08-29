@@ -45,6 +45,8 @@ $success = "";
 $foundDevices = [];
 $notFoundSerials = [];
 $singleDevice = null;
+$authorizationRequestSerial = '';
+$authorizationRequestPrice = '';
 
 // --- Helper: build specs string (like sales_logs) ---
 function buildDeviceSpecs($device) {
@@ -71,6 +73,63 @@ function updateSaleTotal($conn, $sale_id) {
     $new_total = $stmt->fetchColumn();
     $stmt = $conn->prepare("UPDATE sales SET total_amount = ? WHERE id = ?");
     $stmt->execute([$new_total, $sale_id]);
+}
+
+function findApprovedPriceAuthorization(PDO $conn, int $saleId, string $serial, float $requestedPrice): ?array {
+    $stmt = $conn->prepare("
+        SELECT id
+        FROM device_price_authorization_requests
+        WHERE sale_id = ?
+          AND serial_number = ?
+          AND status = 'approved'
+          AND ABS(requested_price - ?) < 0.005
+        ORDER BY reviewed_at DESC, id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$saleId, $serial, $requestedPrice]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ?: null;
+}
+
+function createPriceAuthorizationRequest(PDO $conn, int $saleId, string $serial, int $requestedBy, float $setPrice, float $requestedPrice): array {
+    $stmt = $conn->prepare("
+        SELECT id, status
+        FROM device_price_authorization_requests
+        WHERE sale_id = ?
+          AND serial_number = ?
+          AND ABS(requested_price - ?) < 0.005
+          AND status IN ('pending','approved')
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $stmt->execute([$saleId, $serial, $requestedPrice]);
+    $existing = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($existing) {
+        return ['created' => false, 'status' => $existing['status'], 'id' => (int)$existing['id']];
+    }
+
+    $stmt = $conn->prepare("
+        INSERT INTO device_price_authorization_requests
+            (sale_id, serial_number, requested_by, set_price, requested_price, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', NOW(), NOW())
+    ");
+    $stmt->execute([$saleId, $serial, $requestedBy, $setPrice, $requestedPrice]);
+
+    return ['created' => true, 'status' => 'pending', 'id' => (int)$conn->lastInsertId()];
+}
+
+function markPriceAuthorizationUsed(PDO $conn, int $requestId, int $usedBy): void {
+    $stmt = $conn->prepare("
+        UPDATE device_price_authorization_requests
+        SET status = 'used',
+            used_by = ?,
+            used_at = NOW(),
+            updated_at = NOW()
+        WHERE id = ?
+          AND status = 'approved'
+    ");
+    $stmt->execute([$usedBy, $requestId]);
 }
 
 // --- SEARCH ---
@@ -109,6 +168,126 @@ if (isset($_POST['search_serial'])) {
     }
 }
 
+
+// --- REQUEST LOWER PRICE AUTHORIZATION ---
+if (isset($_POST['request_price_authorization'])) {
+    $serial = trim((string)($_POST['serial_number'] ?? ''));
+    $requestedPriceRaw = trim((string)($_POST['selling_price'] ?? ''));
+
+    if ($serial === '' || $requestedPriceRaw === '' || !is_numeric($requestedPriceRaw) || (float)$requestedPriceRaw <= 0) {
+        $error = "Please enter a valid selling price before requesting authorization.";
+    } else {
+        $requestedPrice = (float)$requestedPriceRaw;
+        $stmt = $conn->prepare("
+            SELECT d.*, c.category_name
+            FROM devices d
+            JOIN categories c ON d.category_id = c.id
+            WHERE d.serial_number = ?
+              AND d.status = 'In Stock'
+              AND d.branch = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$serial, $user_branch]);
+        $device = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$device) {
+            $error = "Device not found in your branch or already sold.";
+        } else {
+            $setPrice = (float)($device['price'] ?? 0);
+
+            if ($setPrice <= 0) {
+                $error = "This device does not have a set price. Please ask an administrator to set the price first.";
+            } elseif ($requestedPrice >= $setPrice) {
+                $error = "Authorization is only required when the selling price is lower than the set price.";
+            } else {
+                try {
+                    $request = createPriceAuthorizationRequest($conn, $sale_id, $serial, $user_id, $setPrice, $requestedPrice);
+                    $singleDevice = $device;
+                    $authorizationRequestSerial = $serial;
+                    $authorizationRequestPrice = $requestedPriceRaw;
+
+                    if ($request['status'] === 'approved') {
+                        $success = "This exact lower selling price is already approved. You may proceed with the sale.";
+                    } elseif ($request['created']) {
+                        $success = "Authorization request sent successfully. Iman's approval is required before selling below the set price.";
+                    } else {
+                        $success = "An authorization request for this exact selling price is already pending approval.";
+                    }
+                } catch (Throwable $e) {
+                    $error = "Could not send authorization request: " . $e->getMessage();
+                }
+            }
+        }
+    }
+}
+
+if (isset($_POST['request_bulk_price_authorization'])) {
+    $serial = trim((string)($_POST['request_bulk_price_authorization'] ?? ''));
+    $priceField = 'selling_price_' . $serial;
+    $requestedPriceRaw = trim((string)($_POST[$priceField] ?? ''));
+
+    if ($serial === '' || $requestedPriceRaw === '' || !is_numeric($requestedPriceRaw) || (float)$requestedPriceRaw <= 0) {
+        $error = "Please enter a valid selling price before requesting authorization.";
+    } else {
+        $requestedPrice = (float)$requestedPriceRaw;
+        $stmt = $conn->prepare("
+            SELECT d.*, c.category_name
+            FROM devices d
+            JOIN categories c ON d.category_id = c.id
+            WHERE d.serial_number = ?
+              AND d.status = 'In Stock'
+              AND d.branch = ?
+            LIMIT 1
+        ");
+        $stmt->execute([$serial, $user_branch]);
+        $device = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$device) {
+            $error = "Device not found in your branch or already sold.";
+        } else {
+            $setPrice = (float)($device['price'] ?? 0);
+
+            if ($setPrice <= 0) {
+                $error = "This device does not have a set price. Please ask an administrator to set the price first.";
+            } elseif ($requestedPrice >= $setPrice) {
+                $error = "Authorization is only required when the selling price is lower than the set price.";
+            } else {
+                try {
+                    $request = createPriceAuthorizationRequest($conn, $sale_id, $serial, $user_id, $setPrice, $requestedPrice);
+                    if ($request['status'] === 'approved') {
+                        $success = "This exact lower selling price is already approved. You may proceed with the sale.";
+                    } elseif ($request['created']) {
+                        $success = "Authorization request sent successfully for {$serial}.";
+                    } else {
+                        $success = "An authorization request for {$serial} at this exact price is already pending approval.";
+                    }
+                } catch (Throwable $e) {
+                    $error = "Could not send authorization request: " . $e->getMessage();
+                }
+            }
+        }
+
+        $serialsToReload = $_POST['selected_serials'] ?? [];
+        if ($serial !== '' && !in_array($serial, $serialsToReload, true)) {
+            $serialsToReload[] = $serial;
+        }
+        $serialsToReload = array_values(array_unique(array_filter(array_map('trim', $serialsToReload))));
+        if ($serialsToReload) {
+            $placeholders = implode(',', array_fill(0, count($serialsToReload), '?'));
+            $sql = "SELECT d.*, c.category_name
+                    FROM devices d
+                    JOIN categories c ON d.category_id = c.id
+                    WHERE d.serial_number IN ($placeholders)
+                      AND d.status = 'In Stock'
+                      AND d.branch = ?";
+            $params = array_merge($serialsToReload, [$user_branch]);
+            $stmt = $conn->prepare($sql);
+            $stmt->execute($params);
+            $foundDevices = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        }
+    }
+}
+
 // --- SINGLE SALE ---
 if (isset($_POST['sell_device'])) {
     $serial = trim($_POST['serial_number']);
@@ -120,11 +299,23 @@ if (isset($_POST['sell_device'])) {
         $conn->beginTransaction();
         try {
             // Get device details
-            $stmt = $conn->prepare("SELECT * FROM devices WHERE serial_number = ? AND status = 'In Stock' AND branch = ?");
+            $stmt = $conn->prepare("SELECT * FROM devices WHERE serial_number = ? AND status = 'In Stock' AND branch = ? FOR UPDATE");
             $stmt->execute([$serial, $user_branch]);
             $device = $stmt->fetch(PDO::FETCH_ASSOC);
             if (!$device) {
                 throw new Exception("Device not found in your branch or already sold.");
+            }
+
+            $setPrice = (float)($device['price'] ?? 0);
+            $authorization = null;
+
+            if ($setPrice > 0 && (float)$selling_price < $setPrice) {
+                $authorization = findApprovedPriceAuthorization($conn, $sale_id, $serial, (float)$selling_price);
+                if (!$authorization) {
+                    $authorizationRequestSerial = $serial;
+                    $authorizationRequestPrice = $selling_price;
+                    throw new Exception("Selling price cannot be lower than the set price without Iman's authorization. Request authorization for KES " . number_format((float)$selling_price, 2) . " to continue.");
+                }
             }
 
             // Update device status
@@ -161,11 +352,15 @@ if (isset($_POST['sell_device'])) {
             $log = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'Sold device', ?)");
             $log->execute([$user_id, "Sold device SN: $serial for KES " . number_format($selling_price, 2) . " in sale #$sale_id"]);
 
+            if ($authorization) {
+                markPriceAuthorizationUsed($conn, (int)$authorization['id'], $user_id);
+            }
+
             $conn->commit();
             header("Location: checkout.php?sale_id=$sale_id&success=device_sold");
             exit;
         } catch (Exception $e) {
-            $conn->rollBack();
+            if ($conn->inTransaction()) $conn->rollBack();
             $error = "Error: " . $e->getMessage();
         }
     }
@@ -191,16 +386,26 @@ if (isset($_POST['sell_bulk_devices'])) {
         if (!$error) {
             $soldCount = 0;
             $failedSerials = [];
+            $authorizationIdsToUse = [];
             $conn->beginTransaction();
             try {
                 foreach ($prices as $serial => $price) {
                     // Get device details
-                    $stmt = $conn->prepare("SELECT * FROM devices WHERE serial_number = ? AND status = 'In Stock' AND branch = ?");
+                    $stmt = $conn->prepare("SELECT * FROM devices WHERE serial_number = ? AND status = 'In Stock' AND branch = ? FOR UPDATE");
                     $stmt->execute([$serial, $user_branch]);
                     $device = $stmt->fetch(PDO::FETCH_ASSOC);
                     if (!$device) {
                         $failedSerials[] = $serial;
                         continue;
+                    }
+
+                    $setPrice = (float)($device['price'] ?? 0);
+                    if ($setPrice > 0 && (float)$price < $setPrice) {
+                        $authorization = findApprovedPriceAuthorization($conn, $sale_id, $serial, (float)$price);
+                        if (!$authorization) {
+                            throw new Exception("Selling price for {$serial} cannot be lower than the set price without Iman's authorization. Request authorization for KES " . number_format((float)$price, 2) . " to continue.");
+                        }
+                        $authorizationIdsToUse[] = (int)$authorization['id'];
                     }
 
                     // Update device
@@ -238,6 +443,10 @@ if (isset($_POST['sell_bulk_devices'])) {
                     updateSaleTotal($conn, $sale_id);
                 }
 
+                foreach (array_unique($authorizationIdsToUse) as $authorizationId) {
+                    markPriceAuthorizationUsed($conn, $authorizationId, $user_id);
+                }
+
                 $conn->commit();
 
                 if ($soldCount > 0) {
@@ -247,7 +456,7 @@ if (isset($_POST['sell_bulk_devices'])) {
                     $error = "No devices could be sold.";
                 }
             } catch (Exception $e) {
-                $conn->rollBack();
+                if ($conn->inTransaction()) $conn->rollBack();
                 $error = "Error: " . $e->getMessage();
             }
         }
@@ -318,6 +527,8 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         .alert { padding: 1rem; border-radius: var(--radius-md); margin-bottom: 1rem; }
         .alert-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
         .alert-success { background: #ecfdf5; border: 1px solid #a7f3d0; color: #065f46; }
+        .authorization-note { margin-top:0.65rem; padding:0.7rem 0.8rem; border:1px solid #fecaca; background:#fff7f7; color:#991b1b; border-radius:var(--radius-md); font-size:0.8rem; }
+        .btn-request { margin-top:0.65rem; background:#b91c1c; }
         table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
         th, td { padding: 0.75rem; text-align: left; border-bottom: 1px solid var(--gray-200); }
         th { background: var(--gray-50); }
@@ -480,7 +691,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                         <th>Selling Price (KES)</th>
                         <td>
                             <input type="number" name="selling_price" form="singleSaleForm" step="0.01" min="0.01"
-                                   value="<?= $singleDevice['price'] ?? '' ?>"
+                                   value="<?= htmlspecialchars(($authorizationRequestSerial === ($singleDevice['serial_number'] ?? '') && $authorizationRequestPrice !== '') ? $authorizationRequestPrice : ($singleDevice['price'] ?? '')) ?>"
                                    placeholder="Enter selling price" required style="width:200px; padding:0.5rem; border:1px solid var(--gray-300); border-radius:var(--radius-md);">
                             <?php if ($singleDevice['price']): ?>
                                 <span style="font-size:0.8rem; color:var(--gray-500);"> (suggested: <?= number_format($singleDevice['price'], 2) ?>)</span>
@@ -494,6 +705,10 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     <input type="hidden" name="serial_number" value="<?= htmlspecialchars($singleDevice['serial_number']) ?>">
                     <input type="hidden" name="sale_id" value="<?= $sale_id ?>">
                     <button type="submit" name="sell_device" class="btn">Confirm Sale</button>
+                    <button type="submit" name="request_price_authorization" class="btn btn-request" formnovalidate>
+                        <i class="fas fa-paper-plane"></i> Request Lower Price Authorization
+                    </button>
+                    <div class="authorization-note">Selling below the set price requires Super Admin approval for that exact amount.</div>
                 </form>
             </div>
         </div>
@@ -530,11 +745,19 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                                     </td>
                                     <td class="price-cell">
                                         <input type="number" name="selling_price_<?= htmlspecialchars($d['serial_number']) ?>" step="0.01" min="0.01"
-                                               value="<?= $d['price'] ?? '' ?>"
+                                               value="<?= htmlspecialchars($_POST['selling_price_' . $d['serial_number']] ?? ($d['price'] ?? '')) ?>"
                                                placeholder="Enter price" required>
                                         <?php if ($d['price']): ?>
-                                            <span class="suggested">suggested: <?= number_format($d['price'], 2) ?></span>
+                                            <span class="suggested">set price: <?= number_format($d['price'], 2) ?></span>
                                         <?php endif; ?>
+                                        <button type="submit"
+                                                name="request_bulk_price_authorization"
+                                                value="<?= htmlspecialchars($d['serial_number']) ?>"
+                                                class="btn btn-request"
+                                                style="padding:0.35rem 0.55rem; font-size:0.72rem; margin-top:0.4rem;"
+                                                formnovalidate>
+                                            Request Authorization
+                                        </button>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>

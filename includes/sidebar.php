@@ -2,7 +2,6 @@
 $userEmail = strtolower(trim($_SESSION['email'] ?? ''));
 $allowedEmails = [
     'stephanie@mombasacomputers.co.ke',
-    'munene23.v@student.cuk.ac.ke',
 ];
 ?>
 <!DOCTYPE html>
@@ -400,6 +399,7 @@ $allowedEmails = [
                     'items' => [
                         ['Add New user', '../auth/add_user', 'fas fa-user-plus'],
                         ['View Users', '../auth/view_users', 'fas fa-users'],
+                        ['Prices Requests', '../sales/price_authorization_requests', 'fas fa-dollar-sign'],
                         ['Settings', '../auth/settings', 'fas fa-cog'],
                     ]
                 ];
