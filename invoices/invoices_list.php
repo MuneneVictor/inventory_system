@@ -16,6 +16,19 @@ $start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-d', s
 $end_date = isset($_GET['end_date']) ? $_GET['end_date'] : date('Y-m-d');
 $search = isset($_GET['search']) ? trim($_GET['search']) : '';
 $status_filter = isset($_GET['status']) ? trim($_GET['status']) : '';
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+function invoiceListPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = max(1, (int)$pageNumber);
+    return '?' . http_build_query($query);
+}
+
 
 // Build query - ONLY show invoices belonging to the logged-in user
 $sql = "SELECT i.*, u.full_name AS created_by_name 
@@ -32,9 +45,9 @@ if (!empty($search)) {
 }
 
 if (!empty($start_date) && !empty($end_date)) {
-    $sql .= " AND DATE(i.created_at) BETWEEN ? AND ?";
-    $params[] = $start_date;
-    $params[] = $end_date;
+    $sql .= " AND i.created_at >= ? AND i.created_at <= ?";
+    $params[] = $start_date . ' 00:00:00';
+    $params[] = $end_date . ' 23:59:59';
 }
 
 if (!empty($status_filter)) {
@@ -42,16 +55,28 @@ if (!empty($status_filter)) {
     $params[] = $status_filter;
 }
 
-$sql .= " ORDER BY i.created_at DESC";
+// Aggregate totals for the complete filtered result without loading every row.
+$statsSql = "SELECT COUNT(*) AS total_count,
+                    COALESCE(SUM(filtered.grand_total), 0) AS total_amount,
+                    COALESCE(SUM(filtered.amount_paid), 0) AS total_paid
+             FROM (" . $sql . ") filtered";
+$statsStmt = $conn->prepare($statsSql);
+$statsStmt->execute($params);
+$stats = $statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
+$total_count = (int)($stats['total_count'] ?? 0);
+$total_amount = (float)($stats['total_amount'] ?? 0);
+$total_paid = (float)($stats['total_paid'] ?? 0);
+$total_balance = $total_amount - $total_paid;
+
+$total_pages = max(1, (int)ceil($total_count / $per_page));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $per_page;
+
+$sql .= " ORDER BY i.created_at DESC LIMIT " . (int)$per_page . " OFFSET " . (int)$offset;
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $invoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-$total_count = count($invoices);
-$total_amount = array_sum(array_column($invoices, 'grand_total'));
-$total_paid = array_sum(array_column($invoices, 'amount_paid'));
-$total_balance = $total_amount - $total_paid;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -107,6 +132,15 @@ $total_balance = $total_amount - $total_paid;
             .filter-actions { flex-direction: column; align-items: stretch; }
             table { font-size: 0.75rem; min-width: 650px; }
         }
+    
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:1rem; }
+        .pagination-info { color: var(--gray-500, #6b7280); font-size:0.85rem; }
+        .pagination-controls { display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:0.45rem 0.7rem; border:1px solid var(--gray-300, #d1d5db); border-radius:var(--radius-md, 0.5rem); background:white; color:var(--gray-600, #4b5563); text-decoration:none; font-size:0.85rem; }
+        .pagination-controls .active { background:var(--primary, #1a4b2a); border-color:var(--primary, #1a4b2a); color:white; }
+        .pagination-controls .disabled { opacity:0.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:0.5rem; color:var(--gray-600, #4b5563); font-size:0.85rem; }
+        .per-page-form select { padding:0.45rem 0.65rem; border:1px solid var(--gray-300, #d1d5db); border-radius:var(--radius-md, 0.5rem); background:white; }
     </style>
 </head>
 <body>
@@ -116,15 +150,15 @@ $total_balance = $total_amount - $total_paid;
         <h1><i class="fas fa-file-invoice"></i> My Invoices</h1>
         <div class="breadcrumb">
             <?php if($user_role === 'sales'): ?>
-                <a href="../dashboard/salesdashboard.php">Dashboard</a>
+                <a href="../dashboard/salesdashboard"">Dashboard</a>
             <?php elseif($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard"">Dashboard</a>
             <?php elseif($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard"">Dashboard</a>
             <?php elseif($user_role === 'cashier'): ?>
-                <a href="../dashboard/cashierdashboard.php">Dashboard</a>
+                <a href="../dashboard/cashierdashboard"">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard.php">Dashboard</a>
+                <a href="../dashboard"">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Invoices</span>
@@ -152,6 +186,7 @@ $total_balance = $total_amount - $total_paid;
 
     <div class="filter-section">
         <form method="GET" class="filter-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="filter-group">
                 <label>Search</label>
                 <input type="text" name="search" placeholder="Invoice # or client..." value="<?= htmlspecialchars($search) ?>">
@@ -176,8 +211,8 @@ $total_balance = $total_amount - $total_paid;
             </div>
             <div class="filter-actions">
                 <button type="submit" class="btn"><i class="fas fa-search"></i> Filter</button>
-                <a href="invoices_list.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
-                <a href="write_invoice.php" class="btn btn-success"><i class="fas fa-plus"></i> New Invoice</a>
+                <a href="invoices_list"" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="write_invoice"" class="btn btn-success"><i class="fas fa-plus"></i> New Invoice</a>
             </div>
         </form>
     </div>
@@ -187,7 +222,7 @@ $total_balance = $total_amount - $total_paid;
             <div class="empty-state">
                 <i class="fas fa-file-invoice" style="font-size:2rem; display:block; margin-bottom:1rem; color:#d1d5db;"></i>
                 <p>No invoices found.</p>
-                <a href="write_invoice.php" class="btn btn-success" style="margin-top:1rem;">Create First Invoice</a>
+                <a href="write_invoice"" class="btn btn-success" style="margin-top:1rem;">Create First Invoice</a>
             </div>
         <?php else: ?>
             <table>
@@ -218,7 +253,7 @@ $total_balance = $total_amount - $total_paid;
                             </td>
                             <td><?= date('M j, Y', strtotime($inv['created_at'])) ?></td>
                             <td style="text-align:right;">
-                                <a href="review_invoice.php?id=<?= $inv['id'] ?>" class="btn btn-sm">
+                                <a href="review_invoice??id=<?= (int)$inv['id'] ?>" class="btn btn-sm">
                                     <i class="fas fa-eye"></i> View
                                 </a>
                             </td>
@@ -228,6 +263,55 @@ $total_balance = $total_amount - $total_paid;
             </table>
         <?php endif; ?>
     </div>
+
+
+    <?php if ($total_count > 0): ?>
+    <div class="pagination-bar">
+        <div class="pagination-info">
+            Showing <?= number_format($offset + 1) ?>–<?= number_format(min($offset + $per_page, $total_count)) ?> of <?= number_format($total_count) ?> invoices
+        </div>
+
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'page' && $key !== 'per_page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8') ?>" value="<?= htmlspecialchars($value, ENT_QUOTES, 'UTF-8') ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label>Show</label>
+            <select name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+        </form>
+
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?>
+                <a href="<?= htmlspecialchars(invoiceListPageUrl($page - 1), ENT_QUOTES, 'UTF-8') ?>">Previous</a>
+            <?php else: ?>
+                <span class="disabled">Previous</span>
+            <?php endif; ?>
+
+            <?php
+            $paginationStart = max(1, $page - 2);
+            $paginationEnd = min($total_pages, $page + 2);
+            for ($p = $paginationStart; $p <= $paginationEnd; $p++):
+            ?>
+                <?php if ($p === $page): ?>
+                    <span class="active"><?= $p ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars(invoiceListPageUrl($p), ENT_QUOTES, 'UTF-8') ?>"><?= $p ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+
+            <?php if ($page < $total_pages): ?>
+                <a href="<?= htmlspecialchars(invoiceListPageUrl($page + 1), ENT_QUOTES, 'UTF-8') ?>">Next</a>
+            <?php else: ?>
+                <span class="disabled">Next</span>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>

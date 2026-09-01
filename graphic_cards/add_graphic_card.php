@@ -463,14 +463,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <h1><i class="fas fa-microchip"></i> Add Graphic Card</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="graphic_cards_instock.php">Graphic Cards</a>
+            <a href="graphic_cards_instock">Graphic Cards</a>
             <span> / </span>
             <span>Add Graphic Card</span>
         </div>
@@ -536,7 +536,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div id="checkFeedback" class="check-feedback"></div>
 
                 <div class="form-actions">
-                    <a href="graphic_cards_instock.php" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>
+                    <a href="graphic_cards_instock" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>
                     <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Add / Update Graphic Card</button>
                 </div>
             </form>

@@ -27,6 +27,15 @@ $filter_source = trim($_GET['source'] ?? '');
 $filter_status = trim($_GET['status'] ?? '');
 $filter_has_cost = isset($_GET['has_cost']) ? (int)$_GET['has_cost'] : '';
 
+
+// Pagination: only load a limited number of rows per request.
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
 // Build query with all filters – FIX: use COALESCE for model and category
 $sql = "SELECT r.*, 
                COALESCE(d.model_name, r.model_name) AS model_name,
@@ -108,7 +117,25 @@ if (!empty($filter_start) && !empty($filter_end)) {
     $params[] = $filter_end;
 }
 
+$__baseSql = $sql;
+$__statsSql = "SELECT COUNT(*) AS total_rows, SUM(CASE WHEN fix_status='pending' THEN 1 ELSE 0 END) AS pending_count, SUM(CASE WHEN fix_status='Fixed' THEN 1 ELSE 0 END) AS fixed_count, SUM(CASE WHEN repair_cost IS NOT NULL AND repair_cost > 0 THEN 1 ELSE 0 END) AS with_cost, SUM(CASE WHEN repair_cost IS NULL OR repair_cost = 0 THEN 1 ELSE 0 END) AS without_cost FROM (" . $__baseSql . ") AS filtered_rows";
+$__statsStmt = $conn->prepare($__statsSql);
+$__statsStmt->execute($params);
+$__stats = $__statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+$totalRepairs=(int)($__stats['total_rows']??0);
+$pendingCount=(int)($__stats['pending_count']??0);
+$fixedCount=(int)($__stats['fixed_count']??0);
+$withCost=(int)($__stats['with_cost']??0);
+$withoutCost=(int)($__stats['without_cost']??0);
+$__total_rows = (int)($__stats['total_rows'] ?? 0);
+$__total_pages = max(1, (int)ceil($__total_rows / $per_page));
+if ($page > $__total_pages) $page = $__total_pages;
+$__offset = ($page - 1) * $per_page;
+
 $sql .= " ORDER BY r.date_added DESC";
+$sql .= " LIMIT " . (int)$per_page . " OFFSET " . (int)$__offset;
+
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $repairs = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -162,27 +189,6 @@ function safe($value) {
     return htmlspecialchars($value ?? '', ENT_QUOTES, 'UTF-8');
 }
 
-// Calculate statistics
-$totalRepairs = count($repairs);
-$pendingCount = 0;
-$fixedCount = 0;
-$withCost = 0;
-$withoutCost = 0;
-
-foreach ($repairs as $r) {
-    if (($r['fix_status'] ?? '') === 'pending') {
-        $pendingCount++;
-    } elseif (($r['fix_status'] ?? '') === 'Fixed') {
-        $fixedCount++;
-    }
-    
-    if (!empty($r['repair_cost']) && $r['repair_cost'] > 0) {
-        $withCost++;
-    } else {
-        $withoutCost++;
-    }
-}
-
 // Build query string for export
 $query_string = http_build_query([
     'serial' => $filter_serial,
@@ -193,8 +199,14 @@ $query_string = http_build_query([
     'status' => $filter_status,
     'has_cost' => $filter_has_cost
 ]);
-?>
 
+function paginationPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -349,7 +361,15 @@ $query_string = http_build_query([
             table { min-width: 800px; }
             .stats-row .stat-card { min-width: 100%; }
         }
-    </style>
+    
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 0; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
+</style>
 </head>
 <body>
     <?php require_once "../includes/sidebar.php"; ?>
@@ -410,6 +430,7 @@ $query_string = http_build_query([
     <div class="filter-section">
         <div class="filter-title"><i class="fas fa-filter"></i> Filter Logs</div>
         <form method="GET" class="filter-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="filter-group">
                 <label><i class="fas fa-hashtag"></i> Serial Number</label>
                 <input type="text" name="serial" placeholder="Search by serial..." value="<?= safe($filter_serial) ?>">
@@ -511,7 +532,7 @@ $query_string = http_build_query([
                     </tr>
                 </thead>
                 <tbody>
-                    <?php $i=1; foreach ($repairs as $r): ?>
+                    <?php $i=$__offset + 1; foreach ($repairs as $r): ?>
                     <tr>
                         <td><?= $i++ ?></td>
                         <td><code><?= safe($r['serial_number'] ?? '') ?></code></td>
@@ -566,6 +587,33 @@ $query_string = http_build_query([
         <a href="repair_logs.php?status=fixed" class="link-btn link-btn-sm"><i class="fas fa-check-circle"></i> Fixed Only</a>
         <a href="repair_logs.php?status=pending" class="link-btn link-btn-sm"><i class="fas fa-clock"></i> Pending Only</a>
     </div>
+
+    <?php if ($__total_rows > 0): ?>
+    <div class="pagination-bar">
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($value) ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label>Show</label>
+            <select name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span>per page</span>
+        </form>
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?><a href="<?= htmlspecialchars(paginationPageUrl($page - 1)) ?>">Previous</a><?php else: ?><span class="disabled">Previous</span><?php endif; ?>
+            <?php $startPage=max(1,$page-2); $endPage=min($__total_pages,$page+2); for($p=$startPage;$p<=$endPage;$p++): ?>
+                <?php if($p===$page): ?><span class="active"><?= $p ?></span><?php else: ?><a href="<?= htmlspecialchars(paginationPageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
+            <?php endfor; ?>
+            <?php if ($page < $__total_pages): ?><a href="<?= htmlspecialchars(paginationPageUrl($page + 1)) ?>">Next</a><?php else: ?><span class="disabled">Next</span><?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
 
     <div class="footer">
         <i class="fas fa-copyright"></i> <?= date('Y'); ?> <span>Mombasa Computers</span>. All rights reserved.

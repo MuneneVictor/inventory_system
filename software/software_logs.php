@@ -39,6 +39,15 @@ if ($user_role === 'super_admin') {
     $softwareUsers = $userStmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
+
+// Pagination: only load a limited number of rows per request.
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
 // Build query with COLLATE for collation compatibility
 $sql = "SELECT m.*, d.model_name, d.storage_type, d.storage_capacity, 
                c.category_name, u.full_name AS performed_by_name, d.branch
@@ -89,7 +98,23 @@ if (!empty($filter_start_date) && !empty($filter_end_date)) {
     $params['end_date'] = $filter_end_date;
 }
 
+$__baseSql = $sql;
+$__statsSql = "SELECT COUNT(*) AS total_rows, COALESCE(SUM(new_ram),0) AS total_ram, COALESCE(SUM(new_storage),0) AS total_storage, COUNT(DISTINCT device_serial) AS unique_devices FROM (" . $__baseSql . ") AS filtered_rows";
+$__statsStmt = $conn->prepare($__statsSql);
+$__statsStmt->execute($params);
+$__stats = $__statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+$totalRecords=(int)($__stats['total_rows']??0);
+$totalRamUpgraded=(float)($__stats['total_ram']??0);
+$totalStorageUpgraded=(float)($__stats['total_storage']??0);
+$uniqueDevices=(int)($__stats['unique_devices']??0);
+$__total_rows = (int)($__stats['total_rows'] ?? 0);
+$__total_pages = max(1, (int)ceil($__total_rows / $per_page));
+if ($page > $__total_pages) $page = $__total_pages;
+$__offset = ($page - 1) * $per_page;
+
 $sql .= " ORDER BY m.date_performed DESC";
+$sql .= " LIMIT " . (int)$per_page . " OFFSET " . (int)$__offset;
 
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
@@ -102,20 +127,20 @@ if ($user_role === 'super_admin') {
     $branches = $branchStmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
-// Calculate statistics
-$totalRecords = count($logs);
-$totalRamUpgraded = array_sum(array_column($logs, 'new_ram'));
-$totalStorageUpgraded = array_sum(array_column($logs, 'new_storage'));
-$uniqueDevices = count(array_unique(array_column($logs, 'device_serial')));
-
 date_default_timezone_set('Africa/Nairobi');
 $hour = date('G');
 if ($hour < 12) $greeting = 'Good morning';
 elseif ($hour < 17) $greeting = 'Good afternoon';
 else $greeting = 'Good evening';
 $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
-?>
 
+function paginationPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -224,7 +249,15 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
             .page-header h1 { font-size: 1.1rem; }
             table { min-width: 700px; }
         }
-    </style>
+    
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 0; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
+</style>
 </head>
 <body>
     <?php include "../includes/sidebar.php"; ?>
@@ -279,6 +312,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     <div class="filter-section">
         <div class="filter-title"><i class="fas fa-filter"></i> Filter Logs</div>
         <form method="GET" class="filter-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="filter-group">
                 <label><i class="fas fa-hashtag"></i> Serial Number</label>
                 <input type="text" name="serial" placeholder="Search by serial..." value="<?= safe($filter_serial) ?>">
@@ -362,7 +396,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     </tr>
                 </thead>
                 <tbody>
-                    <?php $i = 1; foreach ($logs as $log): ?>
+                    <?php $i = $__offset + 1; foreach ($logs as $log): ?>
                     <tr>
                         <td><?= $i++ ?></td>
                         <td><code><?= safe($log['device_serial']) ?></code></td>
@@ -398,6 +432,33 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
             </a>
         <?php endif; ?>
     </div>
+
+    <?php if ($__total_rows > 0): ?>
+    <div class="pagination-bar">
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($value) ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label>Show</label>
+            <select name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span>per page</span>
+        </form>
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?><a href="<?= htmlspecialchars(paginationPageUrl($page - 1)) ?>">Previous</a><?php else: ?><span class="disabled">Previous</span><?php endif; ?>
+            <?php $startPage=max(1,$page-2); $endPage=min($__total_pages,$page+2); for($p=$startPage;$p<=$endPage;$p++): ?>
+                <?php if($p===$page): ?><span class="active"><?= $p ?></span><?php else: ?><a href="<?= htmlspecialchars(paginationPageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
+            <?php endfor; ?>
+            <?php if ($page < $__total_pages): ?><a href="<?= htmlspecialchars(paginationPageUrl($page + 1)) ?>">Next</a><?php else: ?><span class="disabled">Next</span><?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
 
     <div class="footer">
         <i class="fas fa-copyright"></i> <?= date('Y'); ?> <span>Mombasa Computers</span>. All rights reserved.

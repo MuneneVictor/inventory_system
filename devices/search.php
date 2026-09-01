@@ -574,13 +574,13 @@ if($serial){
         </h1>
         <div class="breadcrumb">
              <?php if($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>       
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Search Device</span>
@@ -774,11 +774,11 @@ if($serial){
 
         <!-- Action Buttons -->
         <div style="display: flex; gap: 1rem; flex-wrap: wrap; margin-top: 0.5rem;">
-            <a href="view_device.php?sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-primary">
+            <a href="view_device?sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-primary">
                 <i class="fas fa-eye"></i> View Full Details
             </a>
             <?php if(in_array($role, ['super_admin', 'inventory_admin', 'manager'])): ?>
-                <a href="edit_device.php?sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-secondary">
+                <a href="edit_device?sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-secondary">
                     <i class="fas fa-edit"></i> Edit Device
                 </a>
             <?php endif; ?>

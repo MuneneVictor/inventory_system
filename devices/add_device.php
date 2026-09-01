@@ -146,7 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $success = "Device added successfully!";
         // Optionally reset form after success
-        // header("Location: add_device.php?success=1");
+        // header("Location: add_device?success=1");
         // exit;
 
     } catch (Exception $e) {
@@ -619,16 +619,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </h1>
         <div class="breadcrumb">
             <?php if($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>       
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="device_list.php">Devices</a>
+            <a href="device_list">Devices</a>
             <span> / </span>
             <span>Add Device</span>
         </div>
@@ -809,7 +809,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <div class="form-actions">
-                    <a href="device_list.php" class="btn btn-secondary">
+                    <a href="device_list" class="btn btn-secondary">
                         <i class="fas fa-times"></i> Cancel
                     </a>
                     <button type="submit" class="btn btn-primary">

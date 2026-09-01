@@ -28,6 +28,19 @@ $search_branch = trim($_GET['branch'] ?? '');
 $date_from = trim($_GET['date_from'] ?? '');
 $date_to = trim($_GET['date_to'] ?? '');
 $filter_salesperson = trim($_GET['salesperson'] ?? '');
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+function soldGraphicsPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = max(1, (int)$pageNumber);
+    return '?' . http_build_query($query);
+}
+
 
 // Build query – join with users for sold_by name
 $sql = "SELECT s.*, u.full_name AS sold_by_name
@@ -57,12 +70,12 @@ if ($search_branch && $role !== 'manager') {
     $params['branch'] = $search_branch;
 }
 if ($date_from) {
-    $sql .= " AND DATE(s.date_sold) >= :date_from";
-    $params['date_from'] = $date_from;
+    $sql .= " AND s.date_sold >= :date_from";
+    $params['date_from'] = $date_from . ' 00:00:00';
 }
 if ($date_to) {
-    $sql .= " AND DATE(s.date_sold) <= :date_to";
-    $params['date_to'] = $date_to;
+    $sql .= " AND s.date_sold <= :date_to";
+    $params['date_to'] = $date_to . ' 23:59:59';
 }
 // Salesperson filter (for super_admin and inventory_admin)
 if (in_array($role, ['super_admin', 'inventory_admin']) && !empty($filter_salesperson)) {
@@ -70,17 +83,30 @@ if (in_array($role, ['super_admin', 'inventory_admin']) && !empty($filter_salesp
     $params['salesperson'] = $filter_salesperson;
 }
 
-$sql .= " ORDER BY s.date_sold DESC";
+// Aggregate the full filtered result without loading every row into PHP.
+$statsSql = "SELECT COUNT(*) AS total_items,
+                    COALESCE(SUM(filtered.quantity), 0) AS total_quantity,
+                    COALESCE(SUM(filtered.total_price), 0) AS total_revenue,
+                    COUNT(DISTINCT filtered.branch) AS total_branches
+             FROM (" . $sql . ") filtered";
+$statsStmt = $conn->prepare($statsSql);
+$statsStmt->execute($params);
+$stats = $statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+$total_items = (int)($stats['total_items'] ?? 0);
+$total_quantity = (float)($stats['total_quantity'] ?? 0);
+$total_revenue = (float)($stats['total_revenue'] ?? 0);
+$total_branches = (int)($stats['total_branches'] ?? 0);
+
+$total_pages = max(1, (int)ceil($total_items / $per_page));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $per_page;
+
+$sql .= " ORDER BY s.date_sold DESC LIMIT " . (int)$per_page . " OFFSET " . (int)$offset;
 
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $sales = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Stats
-$total_items = count($sales);
-$total_quantity = array_sum(array_column($sales, 'quantity'));
-$total_revenue = array_sum(array_column($sales, 'total_price'));
-$branches = array_unique(array_column($sales, 'branch'));
 
 // Get sales users for filter (super_admin and inventory_admin only)
 $sales_users = [];
@@ -354,6 +380,15 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
             .page-header h1 { font-size: 1.1rem; }
             .table { min-width: 500px; }
         }
+    
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:1rem; }
+        .pagination-info { color: var(--gray-500, #6b7280); font-size:0.85rem; }
+        .pagination-controls { display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:0.45rem 0.7rem; border:1px solid var(--gray-300, #d1d5db); border-radius:var(--radius-md, 0.5rem); background:white; color:var(--gray-600, #4b5563); text-decoration:none; font-size:0.85rem; }
+        .pagination-controls .active { background:var(--primary, #1a4b2a); border-color:var(--primary, #1a4b2a); color:white; }
+        .pagination-controls .disabled { opacity:0.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:0.5rem; color:var(--gray-600, #4b5563); font-size:0.85rem; }
+        .per-page-form select { padding:0.45rem 0.65rem; border:1px solid var(--gray-300, #d1d5db); border-radius:var(--radius-md, 0.5rem); background:white; }
     </style>
 </head>
 <body>
@@ -363,13 +398,13 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
         <h1><i class="fas fa-microchip"></i> Sold Graphic Cards</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'cashier'): ?>
-                <a href="../dashboard/cashierdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/cashierdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Sold Graphic Cards</span>
@@ -395,7 +430,7 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
         </div>
         <div class="stat-card">
             <div class="stat-icon"><i class="fas fa-store"></i></div>
-            <div class="stat-value"><?= number_format(count($branches)) ?></div>
+            <div class="stat-value"><?= number_format($total_branches) ?></div>
             <div class="stat-label">Branches</div>
         </div>
     </div>
@@ -404,6 +439,7 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
     <div class="search-section">
         <div class="search-title"><i class="fas fa-filter"></i> Filter Sales</div>
         <form method="GET" class="search-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="search-group">
                 <label>Card Type</label>
                 <input type="text" name="type" placeholder="e.g., NVIDIA" value="<?= htmlspecialchars($search_type) ?>">
@@ -443,9 +479,9 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
             <?php endif; ?>
             <div class="search-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="sold_graphic_cards.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="sold_graphic_cards"" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($sales)): ?>
-                    <a href="export_sold_graphics_cards_excel.php?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
+                    <a href="export_sold_graphics_cards_excel??<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
             </div>
         </form>
@@ -458,7 +494,7 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
                 <div class="empty-state">
                     <i class="fas fa-microchip"></i>
                     <p>No sold graphic cards found matching your criteria.</p>
-                    <a href="sold_graphics_cards.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="sold_graphics_cards"" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>
@@ -478,7 +514,7 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php $i = 1; foreach ($sales as $s): ?>
+                        <?php $i = $offset + 1; foreach ($sales as $s): ?>
                             <tr>
                                 <td><?= $i++ ?></td>
                                 <td><strong><?= htmlspecialchars($s['type']) ?></strong></td>
@@ -500,6 +536,55 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
             <?php endif; ?>
         </div>
     </div>
+
+
+    <?php if ($total_items > 0): ?>
+    <div class="pagination-bar">
+        <div class="pagination-info">
+            Showing <?= number_format($offset + 1) ?>–<?= number_format(min($offset + $per_page, $total_items)) ?> of <?= number_format($total_items) ?> sales
+        </div>
+
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'page' && $key !== 'per_page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8') ?>" value="<?= htmlspecialchars($value, ENT_QUOTES, 'UTF-8') ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label>Show</label>
+            <select name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+        </form>
+
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?>
+                <a href="<?= htmlspecialchars(soldGraphicsPageUrl($page - 1), ENT_QUOTES, 'UTF-8') ?>">Previous</a>
+            <?php else: ?>
+                <span class="disabled">Previous</span>
+            <?php endif; ?>
+
+            <?php
+            $paginationStart = max(1, $page - 2);
+            $paginationEnd = min($total_pages, $page + 2);
+            for ($p = $paginationStart; $p <= $paginationEnd; $p++):
+            ?>
+                <?php if ($p === $page): ?>
+                    <span class="active"><?= $p ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars(soldGraphicsPageUrl($p), ENT_QUOTES, 'UTF-8') ?>"><?= $p ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+
+            <?php if ($page < $total_pages): ?>
+                <a href="<?= htmlspecialchars(soldGraphicsPageUrl($page + 1), ENT_QUOTES, 'UTF-8') ?>">Next</a>
+            <?php else: ?>
+                <span class="disabled">Next</span>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="footer">
         <i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers

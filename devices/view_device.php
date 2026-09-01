@@ -531,19 +531,19 @@ if (($role == 'technician' || $role == 'maintenance') && isset($_POST['update_ac
         </h1>
         <div class="breadcrumb">
            <?php if($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>       
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'sales'): ?>
-                <a href="../dashboard/salesdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/salesdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="device_list.php">Devices</a>
+            <a href="device_list">Devices</a>
             <span> / </span>
             <span>View Device</span>
         </div>
@@ -744,12 +744,12 @@ if (($role == 'technician' || $role == 'maintenance') && isset($_POST['update_ac
     <!-- Action Buttons -->
     <?php if($role == 'super_admin' || $role == 'inventory_admin' || $role == 'manager'): ?>
     <div class="action-buttons">
-        <a href="device_list.php" class="btn btn-secondary">
+        <a href="device_list" class="btn btn-secondary">
             <i class="fas fa-arrow-left"></i> Back to Device List
         </a>
     <?php endif; ?>
         <?php if($role == 'super_admin' || $role == 'inventory_admin'): ?>
-            <a href="edit_device.php?sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-primary">
+            <a href="edit_device?sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-primary">
                 <i class="fas fa-edit"></i> Edit Device
             </a>
         <?php endif; ?>

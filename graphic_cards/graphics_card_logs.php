@@ -8,6 +8,10 @@ require_once "../includes/auth_check.php";
 
 $role = $_SESSION['role'];
 $user_id = (int) $_SESSION['user_id'];
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 
 // Allow super_admin, inventory_admin, manager
 if (!in_array($role, ['super_admin', 'inventory_admin', 'manager'])) {
@@ -27,6 +31,12 @@ if ($role === 'manager') {
 $return_error = '';
 $return_success = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['return_graphic'])) {
+    $csrf_token = $_POST['csrf_token'] ?? '';
+    if (!hash_equals($_SESSION['csrf_token'], $csrf_token)) {
+        http_response_code(403);
+        die("Invalid request token.");
+    }
+
     $log_id = (int) $_POST['log_id'];
     $return_qty = (int) $_POST['return_qty'];
 
@@ -145,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['return_graphic'])) {
 
                 // Clear output buffer and redirect
                 ob_end_clean();
-                header("Location: graphics_card_logs.php?success=1");
+                header("Location: graphics_card_logs??success=1");
                 exit;
 
             } catch (Exception $e) {
@@ -168,6 +178,19 @@ $filter_status = trim($_GET['status'] ?? '');
 $date_from = trim($_GET['date_from'] ?? '');
 $date_to = trim($_GET['date_to'] ?? '');
 $search = trim($_GET['search'] ?? '');
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+function graphicLogsPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = max(1, (int)$pageNumber);
+    return '?' . http_build_query($query);
+}
+
 
 // Build query – join with users for given_to and given_by names
 $sql = "SELECT l.*, 
@@ -195,29 +218,42 @@ if ($filter_status) {
     $params['status'] = $filter_status;
 }
 if ($date_from) {
-    $sql .= " AND DATE(l.date_given) >= :date_from";
-    $params['date_from'] = $date_from;
+    $sql .= " AND l.date_given >= :date_from";
+    $params['date_from'] = $date_from . ' 00:00:00';
 }
 if ($date_to) {
-    $sql .= " AND DATE(l.date_given) <= :date_to";
-    $params['date_to'] = $date_to;
+    $sql .= " AND l.date_given <= :date_to";
+    $params['date_to'] = $date_to . ' 23:59:59';
 }
 if ($search) {
     $sql .= " AND (l.type LIKE :search OR l.storage_capacity LIKE :search OR u_given_to.full_name LIKE :search OR u_given_by.full_name LIKE :search)";
     $params['search'] = "%$search%";
 }
 
-$sql .= " ORDER BY l.date_given DESC";
+// Lightweight aggregate query for the full filtered result set.
+$statsSql = "SELECT COUNT(*) AS total_logs,
+                    COALESCE(SUM(filtered.quantity), 0) AS total_quantity,
+                    COUNT(DISTINCT filtered.branch) AS total_branches,
+                    COUNT(DISTINCT filtered.status) AS total_statuses
+             FROM (" . $sql . ") filtered";
+$statsStmt = $conn->prepare($statsSql);
+$statsStmt->execute($params);
+$stats = $statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+
+$total_logs = (int)($stats['total_logs'] ?? 0);
+$total_quantity = (int)($stats['total_quantity'] ?? 0);
+$total_branches = (int)($stats['total_branches'] ?? 0);
+$total_statuses = (int)($stats['total_statuses'] ?? 0);
+
+$total_pages = max(1, (int)ceil($total_logs / $per_page));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $per_page;
+
+$sql .= " ORDER BY l.date_given DESC LIMIT " . (int)$per_page . " OFFSET " . (int)$offset;
 
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Stats
-$total_logs = count($logs);
-$total_quantity = array_sum(array_column($logs, 'quantity'));
-$branches = array_unique(array_column($logs, 'branch'));
-$statuses = array_unique(array_column($logs, 'status'));
 
 // Get branch list for filter (only if super_admin or inventory_admin)
 $branches_list = [];
@@ -572,6 +608,15 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
             .page-header h1 { font-size: 1.1rem; }
             .table { min-width: 500px; }
         }
+    
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; margin-top:1rem; }
+        .pagination-info { color: var(--gray-500, #6b7280); font-size:0.85rem; }
+        .pagination-controls { display:flex; align-items:center; gap:0.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:0.45rem 0.7rem; border:1px solid var(--gray-300, #d1d5db); border-radius:var(--radius-md, 0.5rem); background:white; color:var(--gray-600, #4b5563); text-decoration:none; font-size:0.85rem; }
+        .pagination-controls .active { background:var(--primary, #1a4b2a); border-color:var(--primary, #1a4b2a); color:white; }
+        .pagination-controls .disabled { opacity:0.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:0.5rem; color:var(--gray-600, #4b5563); font-size:0.85rem; }
+        .per-page-form select { padding:0.45rem 0.65rem; border:1px solid var(--gray-300, #d1d5db); border-radius:var(--radius-md, 0.5rem); background:white; }
     </style>
 </head>
 <body>
@@ -581,11 +626,11 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
         <h1><i class="fas fa-history"></i> Graphic Card Logs</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Graphic Card Logs</span>
@@ -606,12 +651,12 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
         </div>
         <div class="stat-card">
             <div class="stat-icon"><i class="fas fa-store"></i></div>
-            <div class="stat-value"><?= number_format(count($branches)) ?></div>
+            <div class="stat-value"><?= number_format($total_branches) ?></div>
             <div class="stat-label">Branches</div>
         </div>
         <div class="stat-card">
             <div class="stat-icon"><i class="fas fa-tags"></i></div>
-            <div class="stat-value"><?= number_format(count($statuses)) ?></div>
+            <div class="stat-value"><?= number_format($total_statuses) ?></div>
             <div class="stat-label">Statuses</div>
         </div>
     </div>
@@ -628,6 +673,7 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
     <div class="search-section">
         <div class="search-title"><i class="fas fa-filter"></i> Filter Logs</div>
         <form method="GET" class="search-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="search-group">
                 <label>Search</label>
                 <input type="text" name="search" placeholder="Type, storage, salesperson..." value="<?= htmlspecialchars($search) ?>">
@@ -662,9 +708,9 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
             </div>
             <div class="search-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="graphic_card_logs.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="graphic_card_logs"" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($logs)): ?>
-                    <a href="export_graphic_card_logs_excel.php?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
+                    <a href="export_graphic_card_logs_excel??<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
             </div>
         </form>
@@ -677,7 +723,7 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
                 <div class="empty-state">
                     <i class="fas fa-history"></i>
                     <p>No graphic card logs found matching your criteria.</p>
-                    <a href="graphic_card_logs.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="graphic_card_logs"" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>
@@ -698,7 +744,7 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
                         </tr>
                     </thead>
                     <tbody>
-                        <?php $i = 1; foreach ($logs as $log): ?>
+                        <?php $i = $offset + 1; foreach ($logs as $log): ?>
                             <?php
                             $statusClass = '';
                             $statusLabel = ucfirst(str_replace('_', ' ', $log['status']));
@@ -738,6 +784,55 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
         </div>
     </div>
 
+
+    <?php if ($total_logs > 0): ?>
+    <div class="pagination-bar">
+        <div class="pagination-info">
+            Showing <?= number_format($offset + 1) ?>–<?= number_format(min($offset + $per_page, $total_logs)) ?> of <?= number_format($total_logs) ?> logs
+        </div>
+
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'page' && $key !== 'per_page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key, ENT_QUOTES, 'UTF-8') ?>" value="<?= htmlspecialchars($value, ENT_QUOTES, 'UTF-8') ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label>Show</label>
+            <select name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+        </form>
+
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?>
+                <a href="<?= htmlspecialchars(graphicLogsPageUrl($page - 1), ENT_QUOTES, 'UTF-8') ?>">Previous</a>
+            <?php else: ?>
+                <span class="disabled">Previous</span>
+            <?php endif; ?>
+
+            <?php
+            $paginationStart = max(1, $page - 2);
+            $paginationEnd = min($total_pages, $page + 2);
+            for ($p = $paginationStart; $p <= $paginationEnd; $p++):
+            ?>
+                <?php if ($p === $page): ?>
+                    <span class="active"><?= $p ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars(graphicLogsPageUrl($p), ENT_QUOTES, 'UTF-8') ?>"><?= $p ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+
+            <?php if ($page < $total_pages): ?>
+                <a href="<?= htmlspecialchars(graphicLogsPageUrl($page + 1), ENT_QUOTES, 'UTF-8') ?>">Next</a>
+            <?php else: ?>
+                <span class="disabled">Next</span>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="footer">
         <i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers
     </div>
@@ -749,6 +844,7 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
         <h3><i class="fas fa-undo-alt"></i> Return Graphic Card</h3>
         <p style="margin-bottom:1rem; color:var(--gray-500);">Enter the quantity to return. You can return up to <strong id="maxQtyDisplay">0</strong> units.</p>
         <form method="POST" id="returnForm" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'], ENT_QUOTES, 'UTF-8') ?>">
             <input type="hidden" name="log_id" id="returnLogId" value="">
             <div class="form-group">
                 <label for="returnQty">Quantity to Return</label>

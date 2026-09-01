@@ -512,25 +512,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
         </h1>
         <div class="breadcrumb">
             <?php if($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>       
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'sales'): ?>
-                <a href="../dashboard/salesdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/salesdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
              <?php if($_SESSION['role'] === 'software'): ?>
-                <a href="../dashboard/softwaredashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/softwaredashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
              <?php if($_SESSION['role'] === 'technician'): ?>
-                <a href="../dashboard/techniciandashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/techniciandashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
              <?php if($_SESSION['role'] === 'cashier'): ?>
-                <a href="../dashboard/cashierdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/cashierdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>My Profile</span>
@@ -711,38 +711,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
             <div class="card-body">
                 <div class="form-actions" style="flex-direction: column;">
                     <?php if ($user['role'] === 'super_admin'): ?>
-                        <a href="generate_code.php" class="btn btn-primary">
+                        <a href="generate_code" class="btn btn-primary">
                             <i class="fas fa-user-plus"></i> Add New User
                         </a>
                     <?php endif; ?>
                     
                     <?php if ($user['role'] === 'super_admin'): ?>
-                        <a href="view_users.php" class="btn btn-secondary">
+                        <a href="view_users" class="btn btn-secondary">
                             <i class="fas fa-users"></i> View All Users
                         </a>
                     <?php endif; ?>
                      <?php if($_SESSION['role'] === 'super_admin'): ?>
-                    <a href="../dashboard/superadmindashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>       
+                    <a href="../dashboard/superadmindashboard" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>       
                     <?php endif; ?>
                     <?php if($_SESSION['role'] === 'manager'): ?>
-                        <a href="../dashboard/managerdashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                        <a href="../dashboard/managerdashboard" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <?php endif; ?>
                     <?php if($_SESSION['role'] === 'inventory_admin'): ?>
-                        <a href="../dashboard/inventorydashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                        <a href="../dashboard/inventorydashboard" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <?php endif; ?>
                     <?php if($_SESSION['role'] === 'sales'): ?>
-                        <a href="../dashboard/salesdashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                        <a href="../dashboard/salesdashboard" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <?php endif; ?>
                     <?php if($_SESSION['role'] === 'software'): ?>
-                        <a href="../dashboard/softwaredashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                        <a href="../dashboard/softwaredashboard" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <?php endif; ?>
                     <?php if($_SESSION['role'] === 'technician'): ?>
-                        <a href="../dashboard/techniciandashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                        <a href="../dashboard/techniciandashboard" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <?php endif; ?>
                     <?php if($_SESSION['role'] === 'cashier'): ?>
-                        <a href="../dashboard/cashierdashboard.php" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
+                        <a href="../dashboard/cashierdashboard" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <?php endif; ?>
-                    <a href="../auth/logout.php" class="btn btn-danger" onclick="return confirm('Are you sure you want to logout?')">
+                    <a href="../auth/logout" class="btn btn-danger" onclick="return confirm('Are you sure you want to logout?')">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
                 </div>

@@ -115,7 +115,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['return_device'])) {
             $return_success = "Device returned successfully! Photo uploaded.";
 
             ob_end_clean();
-            header("Location: device_logs.php?success=1");
+            header("Location: device_logs?success=1");
             exit;
 
         } catch (Exception $e) {
@@ -152,6 +152,15 @@ $filter_status = trim($_GET['status'] ?? '');
 $date_from = trim($_GET['date_from'] ?? '');
 $date_to = trim($_GET['date_to'] ?? '');
 $search = trim($_GET['search'] ?? '');
+
+
+// Pagination: only load a limited number of rows per request.
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
 
 // Build query with positional placeholders
 $sql = "SELECT l.*, 
@@ -208,17 +217,27 @@ if ($search) {
     $params[] = "%$search%";
 }
 
-$sql .= " ORDER BY COALESCE(l.date_given, l.date_taken) DESC";
+$__baseSql = $sql;
+$__statsSql = "SELECT COUNT(*) AS total_rows, COUNT(DISTINCT branch) AS branch_count, COUNT(DISTINCT action) AS action_count, COUNT(DISTINCT status) AS status_count FROM (" . $__baseSql . ") AS filtered_rows";
+$__statsStmt = $conn->prepare($__statsSql);
+$__statsStmt->execute($params);
+$__stats = $__statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-// Now execute with positional parameters
+$total_logs=(int)($__stats['total_rows']??0);
+$branches=array_fill(0,(int)($__stats['branch_count']??0),null);
+$actions=array_fill(0,(int)($__stats['action_count']??0),null);
+$statuses=array_fill(0,(int)($__stats['status_count']??0),null);
+$__total_rows = (int)($__stats['total_rows'] ?? 0);
+$__total_pages = max(1, (int)ceil($__total_rows / $per_page));
+if ($page > $__total_pages) $page = $__total_pages;
+$__offset = ($page - 1) * $per_page;
+
+$sql .= " ORDER BY COALESCE(l.date_given, l.date_taken) DESC";
+$sql .= " LIMIT " . (int)$per_page . " OFFSET " . (int)$__offset;
+
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-$total_logs = count($logs);
-$branches = array_unique(array_column($logs, 'branch'));
-$actions = array_unique(array_column($logs, 'action'));
-$statuses = array_unique(array_column($logs, 'status'));
 
 $branches_list = [];
 if (in_array($role, ['super_admin', 'inventory_admin', 'manager'])) {
@@ -232,8 +251,14 @@ if (in_array($role, ['super_admin', 'inventory_admin', 'manager'])) {
 
 $action_list = ['take_to_display', 'give_out'];
 $status_list = ['instock', 'returned', 'sold'];
-?>
 
+function paginationPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
+
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -584,7 +609,15 @@ $status_list = ['instock', 'returned', 'sold'];
             .table { min-width: 500px; }
             .specs-text { max-width: 120px; }
         }
-    </style>
+    
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 0; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
+</style>
 </head>
 <body>
     <?php include "../includes/sidebar.php"; ?>
@@ -593,11 +626,11 @@ $status_list = ['instock', 'returned', 'sold'];
         <h1><i class="fas fa-history"></i> Device Logs</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Device Logs</span>
@@ -645,6 +678,7 @@ $status_list = ['instock', 'returned', 'sold'];
     <div class="search-section">
         <div class="search-title"><i class="fas fa-filter"></i> Filter Logs</div>
         <form method="GET" class="search-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="search-group">
                 <label>Search (Serial / Model)</label>
                 <input type="text" name="search" placeholder="Serial, model..." value="<?= htmlspecialchars($search) ?>">
@@ -688,9 +722,9 @@ $status_list = ['instock', 'returned', 'sold'];
             </div>
             <div class="search-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="device_logs.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="device_logs" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($logs)): ?>
-                    <a href="export_device_logs_excel.php?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
+                    <a href="export_device_logs_excel?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
             </div>
         </form>
@@ -703,7 +737,7 @@ $status_list = ['instock', 'returned', 'sold'];
                 <div class="empty-state">
                     <i class="fas fa-history"></i>
                     <p>No device logs found matching your criteria.</p>
-                    <a href="device_logs.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="device_logs" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>
@@ -723,7 +757,7 @@ $status_list = ['instock', 'returned', 'sold'];
                         </tr>
                     </thead>
                     <tbody>
-                        <?php $i = 1; foreach ($logs as $log): ?>
+                        <?php $i = $__offset + 1; foreach ($logs as $log): ?>
                             <?php
                             $statusClass = '';
                             $statusLabel = ucfirst($log['status'] ?? 'instock');
@@ -774,6 +808,33 @@ $status_list = ['instock', 'returned', 'sold'];
             <?php endif; ?>
         </div>
     </div>
+
+    <?php if ($__total_rows > 0): ?>
+    <div class="pagination-bar">
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($value) ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label>Show</label>
+            <select name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span>per page</span>
+        </form>
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?><a href="<?= htmlspecialchars(paginationPageUrl($page - 1)) ?>">Previous</a><?php else: ?><span class="disabled">Previous</span><?php endif; ?>
+            <?php $startPage=max(1,$page-2); $endPage=min($__total_pages,$page+2); for($p=$startPage;$p<=$endPage;$p++): ?>
+                <?php if($p===$page): ?><span class="active"><?= $p ?></span><?php else: ?><a href="<?= htmlspecialchars(paginationPageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
+            <?php endfor; ?>
+            <?php if ($page < $__total_pages): ?><a href="<?= htmlspecialchars(paginationPageUrl($page + 1)) ?>">Next</a><?php else: ?><span class="disabled">Next</span><?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
 
     <div class="footer">
         <i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers

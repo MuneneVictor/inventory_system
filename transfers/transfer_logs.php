@@ -197,6 +197,15 @@ if (isset($_GET['filter'])) {
     $search_query = trim($_GET['search'] ?? '');
 }
 
+
+// Pagination: only load a limited number of rows per request.
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
 // Build query with filters
 $sql = "SELECT al.*, u.full_name, u.branch as user_branch
         FROM activity_logs al
@@ -241,7 +250,16 @@ if (!empty($search_query)) {
     $params['search_details'] = "%$search_query%";
     $params['search_name'] = "%$search_query%";
 }
+$__baseSql = $sql;
+$__countStmt = $conn->prepare("SELECT COUNT(*) FROM (" . $__baseSql . ") AS filtered_rows");
+$__countStmt->execute($params);
+$__total_rows = (int)$__countStmt->fetchColumn();
+$__total_pages = max(1, (int)ceil($__total_rows / $per_page));
+if ($page > $__total_pages) $page = $__total_pages;
+$__offset = ($page - 1) * $per_page;
+
 $sql .= " ORDER BY al.created_at DESC";
+$sql .= " LIMIT " . (int)$per_page . " OFFSET " . (int)$__offset;
 
 $stmt = $conn->prepare($sql);
 $stmt->execute($params);
@@ -278,6 +296,13 @@ if ($hour < 12) $greeting = 'Good morning';
 elseif ($hour < 17) $greeting = 'Good afternoon';
 else $greeting = 'Good evening';
 $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
+
+function paginationPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -355,7 +380,15 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
         @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
         @media (max-width: 768px) { .filter-row { flex-direction: column; } .stats-container { flex-direction: column; } button { width: 100%; } }
-    </style>
+    
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 0; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
+</style>
 </head>
 <body>
 <?php include "../includes/sidebar.php"; ?>
@@ -379,6 +412,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 
     <div class="filter-container">
         <form method="GET" id="filterForm">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <input type="hidden" name="filter" value="1">
             <div class="filter-row">
                 <div><label>Start Date</label><input type="date" name="start_date" value="<?= htmlspecialchars($start_date) ?>"></div>
@@ -435,7 +469,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     </div>
 
     <div class="action-buttons">
-        <div>Showing <?= count($transferLogs) ?> logs from <?= date('M d, Y', strtotime($start_date)) ?> to <?= date('M d, Y', strtotime($end_date)) ?></div>
+        <div>Showing <?= number_format($__total_rows) ?> logs from <?= date('M d, Y', strtotime($start_date)) ?> to <?= date('M d, Y', strtotime($end_date)) ?></div>
         <a href="?<?= http_build_query(array_merge($_GET, ['export' => 'excel'])) ?>" class="export-btn"><i class="fas fa-file-excel"></i> Export to Excel</a>
     </div>
 
@@ -499,6 +533,33 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
             </div>
         <?php endif; ?>
     </div>
+
+    <?php if ($__total_rows > 0): ?>
+    <div class="pagination-bar">
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($value) ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label>Show</label>
+            <select name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span>per page</span>
+        </form>
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?><a href="<?= htmlspecialchars(paginationPageUrl($page - 1)) ?>">Previous</a><?php else: ?><span class="disabled">Previous</span><?php endif; ?>
+            <?php $startPage=max(1,$page-2); $endPage=min($__total_pages,$page+2); for($p=$startPage;$p<=$endPage;$p++): ?>
+                <?php if($p===$page): ?><span class="active"><?= $p ?></span><?php else: ?><a href="<?= htmlspecialchars(paginationPageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
+            <?php endfor; ?>
+            <?php if ($page < $__total_pages): ?><a href="<?= htmlspecialchars(paginationPageUrl($page + 1)) ?>">Next</a><?php else: ?><span class="disabled">Next</span><?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
 <script>

@@ -13,9 +13,16 @@ $user_id = (int) $_SESSION['user_id'];
 $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 
 // Get filter inputs
-$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-d', strtotime('-30 days'));
+$start_date = isset($_GET['start_date']) ? $_GET['start_date'] : date('Y-m-01');
 $end_date   = isset($_GET['end_date']) ? $_GET['end_date'] : date('Y-m-d');
 $search     = isset($_GET['search']) ? trim($_GET['search']) : '';
+
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
 
 // ============================================================
 // FETCH ALL SALES FOR THIS SALESPERSON FROM ALL TABLES
@@ -257,6 +264,22 @@ $total_count = count($sales);
 $total_revenue = array_sum(array_column($sales, 'price'));
 $avg_price = $total_count > 0 ? $total_revenue / $total_count : 0;
 
+$total_pages = max(1, (int)ceil($total_count / $per_page));
+if ($page > $total_pages) {
+    $page = $total_pages;
+}
+$offset = ($page - 1) * $per_page;
+$paged_sales = array_slice($sales, $offset, $per_page);
+
+function paginationUrlMySales($pageNumber, $perPageValue = null) {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    if ($perPageValue !== null) {
+        $query['per_page'] = $perPageValue;
+    }
+    return '?' . http_build_query($query);
+}
+
 date_default_timezone_set('Africa/Nairobi');
 $hour = date('G');
 if ($hour < 12) $greeting = 'Good morning';
@@ -332,6 +355,13 @@ else $greeting = 'Good evening';
             .specs-text { max-width: 150px; }
         }
         .text-muted { color: var(--gray-500); }
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 0; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
     </style>
 </head>
 <body>
@@ -355,6 +385,7 @@ else $greeting = 'Good evening';
     <div class="filter-section">
         <div class="filter-title"><i class="fas fa-filter"></i> Filter My Sales</div>
         <form method="GET" class="filter-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="filter-group">
                 <label>Keyword (item name or ID/serial)</label>
                 <input type="text" name="search" placeholder="Search..." value="<?= htmlspecialchars($search) ?>">
@@ -378,7 +409,7 @@ else $greeting = 'Good evening';
     </div>
 
     <div class="table-wrapper">
-        <?php if (empty($sales)): ?>
+        <?php if (empty($paged_sales)): ?>
             <div class="empty-state"><i class="fas fa-chart-line" style="font-size:2rem; display:block; margin-bottom:1rem;"></i><p>No sales found matching your criteria.</p></div>
         <?php else: ?>
             <table>
@@ -395,7 +426,7 @@ else $greeting = 'Good evening';
                     </tr>
                 </thead>
                 <tbody>
-                    <?php $i = 1; foreach ($sales as $sale): ?>
+                    <?php $i = $offset + 1; foreach ($paged_sales as $sale): ?>
                     <tr>
                         <td><?= $i++ ?></td>
                         <td><strong><?= htmlspecialchars($sale['item_name']) ?></strong></td>
@@ -411,6 +442,52 @@ else $greeting = 'Good evening';
             </table>
         <?php endif; ?>
     </div>
+
+    <?php if ($total_count > 0): ?>
+    <div class="pagination-bar">
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($value) ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label for="mySalesPerPage">Show</label>
+            <select id="mySalesPerPage" name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span>per page</span>
+        </form>
+
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?>
+                <a href="<?= htmlspecialchars(paginationUrlMySales($page - 1)) ?>">Previous</a>
+            <?php else: ?>
+                <span class="disabled">Previous</span>
+            <?php endif; ?>
+
+            <?php
+            $startPage = max(1, $page - 2);
+            $endPage = min($total_pages, $page + 2);
+            for ($p = $startPage; $p <= $endPage; $p++):
+            ?>
+                <?php if ($p === $page): ?>
+                    <span class="active"><?= $p ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars(paginationUrlMySales($p)) ?>"><?= $p ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+
+            <?php if ($page < $total_pages): ?>
+                <a href="<?= htmlspecialchars(paginationUrlMySales($page + 1)) ?>">Next</a>
+            <?php else: ?>
+                <span class="disabled">Next</span>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
 

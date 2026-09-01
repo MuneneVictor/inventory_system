@@ -395,10 +395,10 @@ $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </h1>
         <div class="breadcrumb">
              <?php if($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>       
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Price List</span>
@@ -519,12 +519,12 @@ $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <td>
                                 <?php if($d['price'] === null): ?>
                                     <a class="btn btn-add" 
-                                       href="add_price.php?cargo=<?= urlencode($d['cargo_number']) ?>&category_id=<?= $d['category_id'] ?>&model=<?= urlencode($d['model_name']) ?>&processor=<?= urlencode($d['processor']) ?>&ram=<?= $d['ram'] ?>&storage_type=<?= urlencode($d['storage_type']) ?>&storage_capacity=<?= $d['storage_capacity'] ?>&graphics=<?= urlencode($d['graphics']) ?>&touch=<?= urlencode($d['touch']) ?>&device_condition=<?= urlencode($d['device_condition'] ?? 'Ex-Uk') ?>">
+                                       href="add_price?cargo=<?= urlencode($d['cargo_number']) ?>&category_id=<?= $d['category_id'] ?>&model=<?= urlencode($d['model_name']) ?>&processor=<?= urlencode($d['processor']) ?>&ram=<?= $d['ram'] ?>&storage_type=<?= urlencode($d['storage_type']) ?>&storage_capacity=<?= $d['storage_capacity'] ?>&graphics=<?= urlencode($d['graphics']) ?>&touch=<?= urlencode($d['touch']) ?>&device_condition=<?= urlencode($d['device_condition'] ?? 'Ex-Uk') ?>">
                                         <i class="fas fa-plus"></i> Add Price
                                     </a>
                                 <?php else: ?>
                                     <a class="btn btn-primary" 
-                                       href="update_price.php?cargo=<?= urlencode($d['cargo_number']) ?>&category_id=<?= $d['category_id'] ?>&model=<?= urlencode($d['model_name']) ?>&processor=<?= urlencode($d['processor']) ?>&ram=<?= $d['ram'] ?>&storage_type=<?= urlencode($d['storage_type']) ?>&storage_capacity=<?= $d['storage_capacity'] ?>&graphics=<?= urlencode($d['graphics']) ?>&touch=<?= urlencode($d['touch']) ?>&device_condition=<?= urlencode($d['device_condition'] ?? 'Ex-Uk') ?>">
+                                       href="update_price?cargo=<?= urlencode($d['cargo_number']) ?>&category_id=<?= $d['category_id'] ?>&model=<?= urlencode($d['model_name']) ?>&processor=<?= urlencode($d['processor']) ?>&ram=<?= $d['ram'] ?>&storage_type=<?= urlencode($d['storage_type']) ?>&storage_capacity=<?= $d['storage_capacity'] ?>&graphics=<?= urlencode($d['graphics']) ?>&touch=<?= urlencode($d['touch']) ?>&device_condition=<?= urlencode($d['device_condition'] ?? 'Ex-Uk') ?>">
                                         <i class="fas fa-edit"></i> Update Price
                                     </a>
                                 <?php endif; ?>

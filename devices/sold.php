@@ -45,77 +45,88 @@ $search_place = trim($_GET['place'] ?? '');
 $date_from = trim($_GET['date_from'] ?? '');
 $date_to = trim($_GET['date_to'] ?? '');
 
+// Pagination: default 100, selectable up to 500.
+$allowedPerPage = [100, 200, 300, 400, 500];
+$perPage = (int)($_GET['per_page'] ?? 100);
+if (!in_array($perPage, $allowedPerPage, true)) {
+    $perPage = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
 // Fetch categories for dropdown
 $cat_stmt = $conn->prepare("SELECT * FROM categories ORDER BY category_name ASC");
 $cat_stmt->execute();
 $all_categories = $cat_stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Base query – only Sold devices, plus join for added_by and sold_by
-$sql = "SELECT d.*, c.category_name, 
+$where = ["d.status = 'Sold'"];
+$params = [];
+
+if ($role === 'manager' && !empty($user_branch)) {
+    $where[] = "d.branch = :user_branch";
+    $params['user_branch'] = $user_branch;
+}
+if ($search_category !== '') {
+    $where[] = "d.category_id = :cat";
+    $params['cat'] = $search_category;
+}
+if ($search_branch !== '' && $role !== 'manager') {
+    $where[] = "d.branch = :branch";
+    $params['branch'] = $search_branch;
+}
+if ($search_place !== '') {
+    $where[] = "d.place = :place";
+    $params['place'] = $search_place;
+}
+if ($search_model !== '') {
+    $where[] = "d.model_name LIKE :model";
+    $params['model'] = "%$search_model%";
+}
+if ($search_serial !== '') {
+    $where[] = "d.serial_number LIKE :sn";
+    $params['sn'] = $search_serial . '%';
+}
+if ($date_from !== '') {
+    $where[] = "d.sold_at >= :date_from";
+    $params['date_from'] = $date_from . ' 00:00:00';
+}
+if ($date_to !== '') {
+    $where[] = "d.sold_at < :date_to";
+    $dateToNext = date('Y-m-d', strtotime($date_to . ' +1 day'));
+    $params['date_to'] = $dateToNext . ' 00:00:00';
+}
+
+$whereSql = implode(' AND ', $where);
+
+$statsStmt = $conn->prepare("SELECT COUNT(*) AS total_sold, COALESCE(SUM(d.selling_price), 0) AS total_revenue FROM devices d WHERE $whereSql");
+$statsStmt->execute($params);
+$stats = $statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+$total_sold = (int)($stats['total_sold'] ?? 0);
+$total_revenue = (float)($stats['total_revenue'] ?? 0);
+$totalPages = max(1, (int)ceil($total_sold / $perPage));
+if ($page > $totalPages) {
+    $page = $totalPages;
+}
+$offset = ($page - 1) * $perPage;
+
+$sql = "SELECT d.*, c.category_name,
                u_added.full_name AS added_by_name,
                u_sold.full_name AS sold_by_name
         FROM devices d
         JOIN categories c ON d.category_id = c.id
         LEFT JOIN users u_added ON d.added_by = u_added.id
         LEFT JOIN users u_sold ON d.sold_by = u_sold.id
-        WHERE d.status = 'Sold'";
-$params = [];
-
-// Manager restriction
-if ($role === 'manager' && !empty($user_branch)) {
-    $sql .= " AND d.branch = :user_branch";
-    $params['user_branch'] = $user_branch;
-}
-
-// Category filter
-if ($search_category !== '') {
-    $sql .= " AND d.category_id = :cat";
-    $params['cat'] = $search_category;
-}
-
-// Branch filter
-if ($search_branch !== '' && $role !== 'manager') {
-    $sql .= " AND d.branch = :branch";
-    $params['branch'] = $search_branch;
-}
-
-// Place filter
-if ($search_place !== '') {
-    $sql .= " AND d.place = :place";
-    $params['place'] = $search_place;
-}
-
-// Model filter
-if ($search_model !== '') {
-    $sql .= " AND d.model_name LIKE :model";
-    $params['model'] = "%$search_model%";
-}
-
-// Serial filter
-if ($search_serial !== '') {
-    $sql .= " AND d.serial_number LIKE :sn";
-    $params['sn'] = "%$search_serial%";
-}
-
-// Date range filter (sold_at)
-if ($date_from !== '') {
-    $sql .= " AND DATE(d.sold_at) >= :date_from";
-    $params['date_from'] = $date_from;
-}
-if ($date_to !== '') {
-    $sql .= " AND DATE(d.sold_at) <= :date_to";
-    $params['date_to'] = $date_to;
-}
-
-$sql .= " ORDER BY d.sold_at DESC";
+        WHERE $whereSql
+        ORDER BY d.sold_at DESC
+        LIMIT :limit OFFSET :offset";
 
 $stmt = $conn->prepare($sql);
-$stmt->execute($params);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Stats
-$total_sold = count($devices);
-$total_revenue = array_sum(array_column($devices, 'selling_price'));
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -384,6 +395,14 @@ $total_revenue = array_sum(array_column($devices, 'selling_price'));
         }
         .empty-state i { font-size: 3rem; margin-bottom: 1rem; opacity: 0.5; }
 
+        .pagination-controls { margin-top: 1rem; background: white; border: 1px solid var(--gray-200); border-radius: var(--radius-lg); padding: 0.85rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; box-shadow: var(--shadow-sm); }
+        .pagination-info { color: var(--gray-500); font-size: 0.85rem; }
+        .per-page-control { display: flex; align-items: center; gap: 0.5rem; color: var(--gray-600); font-size: 0.85rem; }
+        .per-page-control select { padding: 0.45rem 0.65rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); background: white; }
+        .pagination-links { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+        .pagination-links a, .pagination-links span { min-width: 36px; padding: 0.45rem 0.65rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); text-align: center; text-decoration: none; color: var(--gray-700); background: white; font-size: 0.82rem; }
+        .pagination-links a.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .pagination-links span.disabled { color: var(--gray-400); background: var(--gray-50); }
         .footer {
             text-align: center;
             padding: 1.5rem 0 0.5rem;
@@ -429,16 +448,16 @@ $total_revenue = array_sum(array_column($devices, 'selling_price'));
         </h1>
         <div class="breadcrumb">
             <?php if($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>       
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'sales'): ?>
-                <a href="../dashboard/salesdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/salesdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Sold Devices</span>
@@ -470,6 +489,7 @@ $total_revenue = array_sum(array_column($devices, 'selling_price'));
             <i class="fas fa-filter"></i> Filter Sold Devices
         </div>
         <form method="GET" class="search-grid" id="soldFilterForm">
+            <input type="hidden" name="per_page" value="<?= $perPage ?>">
             <div class="search-group">
                 <label>Category</label>
                 <select name="category">
@@ -527,7 +547,7 @@ $total_revenue = array_sum(array_column($devices, 'selling_price'));
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-search"></i> Search
                 </button>
-                <a href="sold_devices.php" class="btn btn-secondary">
+                <a href="sold_devices" class="btn btn-secondary">
                     <i class="fas fa-undo"></i> Reset
                 </a>
             </div>
@@ -541,7 +561,7 @@ $total_revenue = array_sum(array_column($devices, 'selling_price'));
                 <div class="empty-state">
                     <i class="fas fa-search"></i>
                     <p>No sold devices found matching your criteria.</p>
-                    <a href="sold_devices.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="sold_devices" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>
@@ -565,7 +585,7 @@ $total_revenue = array_sum(array_column($devices, 'selling_price'));
                         </tr>
                     </thead>
                     <tbody>
-                    <?php $i = 1; foreach ($devices as $d): 
+                    <?php $i = $offset + 1; foreach ($devices as $d): 
                         $specs = buildDeviceSpecs($d);
                         $placeClass = '';
                         if ($d['place'] == 'display') $placeClass = 'badge-place-display';
@@ -599,7 +619,7 @@ $total_revenue = array_sum(array_column($devices, 'selling_price'));
                             </td>
                             <td>
                                 <div class="action-btns">
-                                    <a class="btn-view" href="view_device.php?sn=<?= urlencode($d['serial_number']) ?>">
+                                    <a class="btn-view" href="view_device?sn=<?= urlencode($d['serial_number']) ?>">
                                         <i class="fas fa-eye"></i> View
                                     </a>
                                 </div>
@@ -612,12 +632,58 @@ $total_revenue = array_sum(array_column($devices, 'selling_price'));
         </div>
     </div>
 
+    <div class="pagination-controls">
+        <div class="pagination-info">
+            <?php if ($total_sold > 0): ?>
+                Showing <?= number_format($offset + 1) ?>-<?= number_format(min($offset + $perPage, $total_sold)) ?> of <?= number_format($total_sold) ?>
+            <?php else: ?>
+                Showing 0 devices
+            <?php endif; ?>
+        </div>
+        <div class="per-page-control">
+            <label for="soldPerPage">Rows</label>
+            <select id="soldPerPage" onchange="changeSoldPerPage(this.value)">
+                <?php foreach ($allowedPerPage as $size): ?>
+                    <option value="<?= $size ?>" <?= $perPage === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="pagination-links">
+            <?php
+            $baseQuery = $_GET;
+            $baseQuery['per_page'] = $perPage;
+            $startPage = max(1, $page - 2);
+            $endPage = min($totalPages, $page + 2);
+            ?>
+            <?php if ($page > 1): $baseQuery['page'] = $page - 1; ?>
+                <a href="?<?= htmlspecialchars(http_build_query($baseQuery)) ?>">Previous</a>
+            <?php else: ?>
+                <span class="disabled">Previous</span>
+            <?php endif; ?>
+            <?php for ($p = $startPage; $p <= $endPage; $p++): $baseQuery['page'] = $p; ?>
+                <a class="<?= $p === $page ? 'active' : '' ?>" href="?<?= htmlspecialchars(http_build_query($baseQuery)) ?>"><?= $p ?></a>
+            <?php endfor; ?>
+            <?php if ($page < $totalPages): $baseQuery['page'] = $page + 1; ?>
+                <a href="?<?= htmlspecialchars(http_build_query($baseQuery)) ?>">Next</a>
+            <?php else: ?>
+                <span class="disabled">Next</span>
+            <?php endif; ?>
+        </div>
+    </div>
+
     <div class="footer">
         <i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers
     </div>
 </div>
 
 <script>
+function changeSoldPerPage(value) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('per_page', value);
+    url.searchParams.set('page', '1');
+    window.location.href = url.toString();
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     function adjustMainContent() {
         const mainContent = document.querySelector('.main-content');
@@ -657,6 +723,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (controller) controller.abort();
         controller = new AbortController();
         const params = new URLSearchParams(new FormData(form));
+        params.set('page', '1');
         const url = form.action || window.location.pathname;
         try {
             const response = await fetch(url + '?' + params.toString(), {
@@ -668,10 +735,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const doc = new DOMParser().parseFromString(html, 'text/html');
             const newStats = doc.querySelector('.stats-row');
             const newTable = doc.querySelector('.table-wrapper');
+            const newPagination = doc.querySelector('.pagination-controls');
             const stats = document.querySelector('.stats-row');
             const table = document.querySelector('.table-wrapper');
+            const pagination = document.querySelector('.pagination-controls');
             if (newStats && stats) stats.innerHTML = newStats.innerHTML;
             if (newTable && table) table.innerHTML = newTable.innerHTML;
+            if (newPagination && pagination) pagination.innerHTML = newPagination.innerHTML;
             history.replaceState(null, '', url + (params.toString() ? '?' + params.toString() : ''));
         } catch(e){
             if (e.name !== 'AbortError') console.error(e);
@@ -679,7 +749,9 @@ document.addEventListener('DOMContentLoaded', function() {
     }
     serialInput.addEventListener('input', function(){
         clearTimeout(timer);
-        timer = setTimeout(ajaxSearch, 300);
+        const value = this.value.trim();
+        if (value.length === 1) return;
+        timer = setTimeout(ajaxSearch, 250);
     });
 })();
 </script>

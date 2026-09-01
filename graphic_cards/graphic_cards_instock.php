@@ -460,13 +460,13 @@ $branches = array_unique(array_column($cards, 'branch'));
         <h1><i class="fas fa-microchip"></i> In‑Stock Graphic Cards</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'sales'): ?>
-                <a href="../dashboard/salesdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/salesdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>In‑Stock Graphic Cards</span>
@@ -521,9 +521,9 @@ $branches = array_unique(array_column($cards, 'branch'));
             <?php endif; ?>
             <div class="search-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="graphic_cards_instock.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="graphic_cards_instock" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($cards)): ?>
-                    <a href="export_graphic_cards_excel.php?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
+                    <a href="export_graphic_cards_excel?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
             </div>
         </form>
@@ -536,7 +536,7 @@ $branches = array_unique(array_column($cards, 'branch'));
                 <div class="empty-state">
                     <i class="fas fa-microchip"></i>
                     <p>No graphic cards found matching your criteria.</p>
-                    <a href="graphic_cards_instock.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="graphic_cards_instock" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>
@@ -584,11 +584,11 @@ $branches = array_unique(array_column($cards, 'branch'));
                                         
                                             <div class="action-links">
                                                 <?php if ($c['price'] === null): ?>
-                                                    <a href="add_price_graphic_card.php?id=<?= urlencode($c['id']) ?>" class="action-link">
+                                                    <a href="add_price_graphic_card?id=<?= urlencode($c['id']) ?>" class="action-link">
                                                         <i class="fas fa-tag"></i> Add Price
                                                     </a>
                                                 <?php else: ?>
-                                                    <a href="update_price_graphic_card.php?id=<?= urlencode($c['id']) ?>" class="action-link">
+                                                    <a href="update_price_graphic_card?id=<?= urlencode($c['id']) ?>" class="action-link">
                                                         <i class="fas fa-edit"></i> Update Price
                                                     </a>
                                                 <?php endif; ?>

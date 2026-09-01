@@ -14,47 +14,81 @@ $end_date = $_GET['end_date'] ?? '';
 $search = trim($_GET['search'] ?? '');
 $user_filter = $_GET['user_filter'] ?? '';
 
-// --- Build base query ---
-$sql = "SELECT a.*, u.full_name 
-        FROM activity_logs a
-        LEFT JOIN users u ON a.user_id = u.id
-        WHERE 1";
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+// --- Build WHERE clause once for count + paginated list ---
+$where = ["1"];
 $params = [];
 
-// --- Date range filter (both dates optional) ---
-if (!empty($start_date) && !empty($end_date)) {
-    $sql .= " AND DATE(a.created_at) BETWEEN :start AND :end";
-    $params['start'] = $start_date;
-    $params['end'] = $end_date;
-} elseif (!empty($start_date)) {
-    $sql .= " AND DATE(a.created_at) >= :start";
-    $params['start'] = $start_date;
-} elseif (!empty($end_date)) {
-    $sql .= " AND DATE(a.created_at) <= :end";
-    $params['end'] = $end_date;
+// Use range comparisons on created_at so the date index can be used.
+if (!empty($start_date)) {
+    $where[] = "a.created_at >= :start";
+    $params['start'] = $start_date . ' 00:00:00';
+}
+if (!empty($end_date)) {
+    $where[] = "a.created_at <= :end";
+    $params['end'] = $end_date . ' 23:59:59';
 }
 
-// --- Search by details ---
+// Search by details. Keep existing search behavior.
 if (!empty($search)) {
-    $sql .= " AND a.details LIKE :search";
+    $where[] = "a.details LIKE :search";
     $params['search'] = "%$search%";
 }
 
-// --- User filter ---
+// User filter
 if (!empty($user_filter)) {
-    $sql .= " AND a.user_id = :user_id";
-    $params['user_id'] = $user_filter;
+    $where[] = "a.user_id = :user_id";
+    $params['user_id'] = (int)$user_filter;
 }
 
-$sql .= " ORDER BY a.created_at DESC";
+$whereSql = implode(" AND ", $where);
+
+// Lightweight count query for pagination and the Total Logs card.
+$countSql = "SELECT COUNT(*)
+             FROM activity_logs a
+             WHERE {$whereSql}";
+$countStmt = $conn->prepare($countSql);
+$countStmt->execute($params);
+$total_logs = (int)$countStmt->fetchColumn();
+
+$total_pages = max(1, (int)ceil($total_logs / $per_page));
+if ($page > $total_pages) {
+    $page = $total_pages;
+}
+$offset = ($page - 1) * $per_page;
+
+// Load only the rows needed for the current page.
+$sql = "SELECT a.*, u.full_name
+        FROM activity_logs a
+        LEFT JOIN users u ON a.user_id = u.id
+        WHERE {$whereSql}
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT :limit OFFSET :offset";
 
 $stmt = $conn->prepare($sql);
-$stmt->execute($params);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $per_page, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // --- Get list of users for filter dropdown ---
 $user_stmt = $conn->query("SELECT id, full_name FROM users ORDER BY full_name");
 $users = $user_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+function activityPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
 
 date_default_timezone_set('Africa/Nairobi');
 $hour = date('G');
@@ -121,6 +155,13 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     text-decoration: underline;
                     font-weight: 500;
                 }
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 0; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
         @media (max-width: 1200px) {
             .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; }
         }
@@ -151,12 +192,13 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     </div>
 
     <div class="stats-row">
-        <div class="stat-card"><div class="stat-value"><?= count($logs) ?></div><div class="stat-label">Total Logs</div></div>
+        <div class="stat-card"><div class="stat-value"><?= number_format($total_logs) ?></div><div class="stat-label">Total Logs</div></div>
     </div>
 
     <div class="filter-section">
         <div class="filter-title"><i class="fas fa-filter"></i> Filter Logs</div>
         <form method="GET" class="filter-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="filter-group">
                 <label>Search in Details</label>
                 <input type="text" name="search" placeholder="Search by action or details..." value="<?= htmlspecialchars($search) ?>">
@@ -200,7 +242,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     </tr>
                 </thead>
                 <tbody>
-                    <?php $i=1; foreach ($logs as $log): ?>
+                    <?php $i=$offset + 1; foreach ($logs as $log): ?>
                     <tr>
                         <td><?= $i++ ?></td>
                         <td><span class="badge"><?= htmlspecialchars($log['action']) ?></span></td>
@@ -213,6 +255,52 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
             </table>
         <?php endif; ?>
     </div>
+
+    <?php if ($total_logs > 0): ?>
+    <div class="pagination-bar">
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($value) ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label for="activityPerPage">Show</label>
+            <select id="activityPerPage" name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span>per page</span>
+        </form>
+
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?>
+                <a href="<?= htmlspecialchars(activityPageUrl($page - 1)) ?>">Previous</a>
+            <?php else: ?>
+                <span class="disabled">Previous</span>
+            <?php endif; ?>
+
+            <?php
+            $startPage = max(1, $page - 2);
+            $endPage = min($total_pages, $page + 2);
+            for ($p = $startPage; $p <= $endPage; $p++):
+            ?>
+                <?php if ($p === $page): ?>
+                    <span class="active"><?= $p ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars(activityPageUrl($p)) ?>"><?= $p ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+
+            <?php if ($page < $total_pages): ?>
+                <a href="<?= htmlspecialchars(activityPageUrl($page + 1)) ?>">Next</a>
+            <?php else: ?>
+                <span class="disabled">Next</span>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
 

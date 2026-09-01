@@ -571,18 +571,18 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
         </h1>
         <div class="breadcrumb">
             <?php if($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>       
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>       
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <?php if($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="device_list.php">Devices</a>
+            <a href="device_list">Devices</a>
             <span> / </span>
-            <a href="view_device.php?sn=<?= urlencode($device['serial_number']) ?>">View Device</a>
+            <a href="view_device?sn=<?= urlencode($device['serial_number']) ?>">View Device</a>
             <span> / </span>
             <span>Edit Device</span>
         </div>
@@ -691,7 +691,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
                 </div>
 
                 <div class="form-actions">
-                    <a href="view_device.php?sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-secondary">
+                    <a href="view_device?sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-secondary">
                         <i class="fas fa-times"></i> Cancel
                     </a>
                     <button type="submit" class="btn btn-primary">

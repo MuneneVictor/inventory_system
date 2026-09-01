@@ -4,7 +4,7 @@ require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 
 // Restrict access: only sales and cashier roles
-if (!in_array($_SESSION['role'], ['sales', 'cashier'])) {
+if (!in_array($_SESSION['role'], ['sales', 'cashier','super_admin'])) {
     die("ACCESS DENIED. Only sales personnel and cashiers can add clients.");
 }
 

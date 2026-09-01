@@ -524,11 +524,11 @@ else $greeting = 'Good evening';
             </h1>
             <div class="breadcrumb">
                 <?php if ($user_role === 'super_admin'): ?>
-                    <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                    <a href="../dashboard/superadmindashboard">Dashboard</a>
                 <?php elseif ($user_role === 'manager'): ?>
-                    <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                    <a href="../dashboard/managerdashboard">Dashboard</a>
                 <?php else: ?>
-                    <a href="../dashboard/cashierdashboard.php">Dashboard</a>
+                    <a href="../dashboard/cashierdashboard">Dashboard</a>
                 <?php endif; ?>
                 <span> / </span>
                 <span>Daily Report</span>
@@ -578,7 +578,7 @@ else $greeting = 'Good evening';
                         <button type="submit" class="btn btn-primary">
                             <i class="fas fa-search"></i> View Report
                         </button>
-                        <a href="daily_report.php" class="btn btn-secondary">
+                        <a href="daily_report" class="btn btn-secondary">
                             <i class="fas fa-undo"></i> Today
                         </a>
                     </div>

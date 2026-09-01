@@ -224,7 +224,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_sale_details']
 
     // Post/Redirect/Get keeps the page from resubmitting the sale.
     $queryString = $_SERVER['QUERY_STRING'] ?? '';
-    header('Location: instock.php' . ($queryString !== '' ? '?' . $queryString : ''));
+    header('Location: instock' . ($queryString !== '' ? '?' . $queryString : ''));
     exit;
 }
 
@@ -261,52 +261,72 @@ $filter_branch = trim($_GET['branch'] ?? '');
 $filter_category = trim($_GET['category'] ?? '');
 $filter_place = trim($_GET['place'] ?? '');
 
-// Build query
-$sql = "SELECT d.*, 
+// Pagination: default 100, selectable up to 500.
+$allowedPerPage = [100, 200, 300, 400, 500];
+$perPage = (int)($_GET['per_page'] ?? 100);
+if (!in_array($perPage, $allowedPerPage, true)) {
+    $perPage = 100;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+// Build filters once; serial search runs against the entire In Stock set before pagination.
+$where = ["d.status = 'In Stock'"];
+$params = [];
+
+if ($role === 'manager' && !empty($user_branch)) {
+    $where[] = "d.branch = :user_branch";
+    $params['user_branch'] = $user_branch;
+}
+if ($filter_branch && $role !== 'manager') {
+    $where[] = "d.branch = :branch";
+    $params['branch'] = $filter_branch;
+}
+if ($filter_category) {
+    $where[] = "d.category_id = :category_id";
+    $params['category_id'] = (int)$filter_category;
+}
+if ($filter_place) {
+    $where[] = "d.place = :place";
+    $params['place'] = $filter_place;
+}
+if ($filter_serial) {
+    $where[] = "d.serial_number LIKE :serial";
+    $params['serial'] = $filter_serial . '%';
+}
+if ($filter_model) {
+    $where[] = "d.model_name LIKE :model";
+    $params['model'] = "%$filter_model%";
+}
+
+$whereSql = implode(' AND ', $where);
+
+$countStmt = $conn->prepare("SELECT COUNT(*) FROM devices d WHERE $whereSql");
+$countStmt->execute($params);
+$total_devices = (int)$countStmt->fetchColumn();
+$totalPages = max(1, (int)ceil($total_devices / $perPage));
+if ($page > $totalPages) {
+    $page = $totalPages;
+}
+$offset = ($page - 1) * $perPage;
+
+$sql = "SELECT d.*,
                u.full_name AS added_by_name,
                c.category_name
         FROM devices d
         LEFT JOIN users u ON d.added_by = u.id
         LEFT JOIN categories c ON d.category_id = c.id
-        WHERE d.status = 'In Stock'";
-$params = [];
-
-// Manager restriction
-if ($role === 'manager' && !empty($user_branch)) {
-    $sql .= " AND d.branch = :user_branch";
-    $params['user_branch'] = $user_branch;
-}
-
-// Filters
-if ($filter_branch && $role !== 'manager') {
-    $sql .= " AND d.branch = :branch";
-    $params['branch'] = $filter_branch;
-}
-if ($filter_category) {
-    $sql .= " AND d.category_id = :category_id";
-    $params['category_id'] = (int)$filter_category;
-}
-if ($filter_place) {
-    $sql .= " AND d.place = :place";
-    $params['place'] = $filter_place;
-}
-if ($filter_serial) {
-    $sql .= " AND d.serial_number LIKE :serial";
-    $params['serial'] = "%$filter_serial%";
-}
-if ($filter_model) {
-    $sql .= " AND d.model_name LIKE :model";
-    $params['model'] = "%$filter_model%";
-}
-
-$sql .= " ORDER BY d.date_added DESC";
+        WHERE $whereSql
+        ORDER BY d.date_added DESC
+        LIMIT :limit OFFSET :offset";
 
 $stmt = $conn->prepare($sql);
-$stmt->execute($params);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $perPage, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Stats
-$total_devices = count($devices);
 
 // Get lists for filter dropdowns
 $branches_list = [];
@@ -377,6 +397,14 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
         .text-muted { color: var(--gray-500); }
         .empty-state { text-align: center; padding: 3rem; color: var(--gray-500); }
         .empty-state i { font-size: 2rem; display: block; margin-bottom: 1rem; opacity: 0.5; }
+        .pagination-controls { margin-top: 1rem; background: white; border: 1px solid var(--gray-200); border-radius: var(--radius-lg); padding: 0.85rem 1rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; box-shadow: var(--shadow-sm); }
+        .pagination-info { color: var(--gray-500); font-size: 0.85rem; }
+        .per-page-control { display: flex; align-items: center; gap: 0.5rem; color: var(--gray-600); font-size: 0.85rem; }
+        .per-page-control select { padding: 0.45rem 0.65rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); background: white; }
+        .pagination-links { display: flex; align-items: center; gap: 0.35rem; flex-wrap: wrap; }
+        .pagination-links a, .pagination-links span { min-width: 36px; padding: 0.45rem 0.65rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); text-align: center; text-decoration: none; color: var(--gray-600); background: white; font-size: 0.82rem; }
+        .pagination-links a.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .pagination-links span.disabled { color: var(--gray-400); background: var(--gray-50); }
         .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
         .btn-view { background: #3b82f6; color: white; border: none; border-radius: var(--radius-sm); padding: 0.3rem 0.6rem; font-size: 0.75rem; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 0.25rem; }
         .btn-view:hover { background: #2563eb; }
@@ -535,11 +563,11 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <h1><i class="fas fa-boxes"></i> In-Stock Devices</h1>
         <div class="breadcrumb">
             <?php if ($role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($role === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>In-Stock Devices</span>
@@ -574,6 +602,7 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
     <div class="filter-section">
         <div class="filter-title"><i class="fas fa-filter"></i> Filter Devices</div>
         <form method="GET" class="filter-grid" id="instockFilterForm">
+            <input type="hidden" name="per_page" value="<?= $perPage ?>">
             <div class="filter-group">
                 <label>Serial Number</label>
                 <input type="text" name="serial" id="instockSerialSearch" placeholder="e.g., 5CG..." value="<?= htmlspecialchars($filter_serial) ?>" autocomplete="off">
@@ -613,7 +642,7 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
             <div class="filter-actions">
                 <button type="submit" class="btn"><i class="fas fa-search"></i> Filter</button>
-                <a href="instock.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="instock" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
             </div>
         </form>
     </div>
@@ -623,7 +652,7 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div class="empty-state">
                 <i class="fas fa-box-open"></i>
                 <p>No in-stock devices found matching your criteria.</p>
-                <a href="instock.php" class="btn" style="margin-top: 1rem;">
+                <a href="instock" class="btn" style="margin-top: 1rem;">
                     <i class="fas fa-undo"></i> Clear Filters
                 </a>
             </div>
@@ -644,7 +673,7 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     </tr>
                 </thead>
                 <tbody>
-                    <?php $i = 1; foreach ($devices as $device): ?>
+                    <?php $i = $offset + 1; foreach ($devices as $device): ?>
                         <?php
                         $placeClass = '';
                         if ($device['place'] == 'display') $placeClass = 'badge-place-display';
@@ -687,6 +716,45 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 </tbody>
             </table>
         <?php endif; ?>
+    </div>
+
+    <div class="pagination-controls">
+        <div class="pagination-info">
+            <?php if ($total_devices > 0): ?>
+                Showing <?= number_format($offset + 1) ?>-<?= number_format(min($offset + $perPage, $total_devices)) ?> of <?= number_format($total_devices) ?>
+            <?php else: ?>
+                Showing 0 devices
+            <?php endif; ?>
+        </div>
+        <div class="per-page-control">
+            <label for="instockPerPage">Rows</label>
+            <select id="instockPerPage" onchange="changeInstockPerPage(this.value)">
+                <?php foreach ($allowedPerPage as $size): ?>
+                    <option value="<?= $size ?>" <?= $perPage === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="pagination-links">
+            <?php
+            $baseQuery = $_GET;
+            $baseQuery['per_page'] = $perPage;
+            $startPage = max(1, $page - 2);
+            $endPage = min($totalPages, $page + 2);
+            ?>
+            <?php if ($page > 1): $baseQuery['page'] = $page - 1; ?>
+                <a href="?<?= htmlspecialchars(http_build_query($baseQuery)) ?>">Previous</a>
+            <?php else: ?>
+                <span class="disabled">Previous</span>
+            <?php endif; ?>
+            <?php for ($p = $startPage; $p <= $endPage; $p++): $baseQuery['page'] = $p; ?>
+                <a class="<?= $p === $page ? 'active' : '' ?>" href="?<?= htmlspecialchars(http_build_query($baseQuery)) ?>"><?= $p ?></a>
+            <?php endfor; ?>
+            <?php if ($page < $totalPages): $baseQuery['page'] = $page + 1; ?>
+                <a href="?<?= htmlspecialchars(http_build_query($baseQuery)) ?>">Next</a>
+            <?php else: ?>
+                <span class="disabled">Next</span>
+            <?php endif; ?>
+        </div>
     </div>
 
 
@@ -793,6 +861,13 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 </div>
 
 <script>
+    function changeInstockPerPage(value) {
+        const url = new URL(window.location.href);
+        url.searchParams.set('per_page', value);
+        url.searchParams.set('page', '1');
+        window.location.href = url.toString();
+    }
+
     function adjustMainContent() {
         const main = document.querySelector('.main-content');
         if (window.innerWidth <= 1200) {
@@ -869,6 +944,7 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
         if (controller) controller.abort();
         controller = new AbortController();
         const params = new URLSearchParams(new FormData(form));
+        params.set('page', '1');
         const url = form.action || window.location.pathname;
         try {
             const response = await fetch(url + '?' + params.toString(), {
@@ -880,10 +956,13 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
             const doc = new DOMParser().parseFromString(html, 'text/html');
             const newStats = doc.querySelector('.stats-row');
             const newTable = doc.querySelector('.table-wrapper');
+            const newPagination = doc.querySelector('.pagination-controls');
             const stats = document.querySelector('.stats-row');
             const table = document.querySelector('.table-wrapper');
+            const pagination = document.querySelector('.pagination-controls');
             if (newStats && stats) stats.innerHTML = newStats.innerHTML;
             if (newTable && table) table.innerHTML = newTable.innerHTML;
+            if (newPagination && pagination) pagination.innerHTML = newPagination.innerHTML;
             history.replaceState(null, '', url + (params.toString() ? '?' + params.toString() : ''));
             bindSaleButtons();
         } catch (e) {
@@ -893,7 +972,9 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
     serialInput.addEventListener('input', function(){
         clearTimeout(timer);
-        timer = setTimeout(ajaxFilter, 300);
+        const value = this.value.trim();
+        if (value.length === 1) return;
+        timer = setTimeout(ajaxFilter, 250);
     });
 
     function bindSaleButtons(){

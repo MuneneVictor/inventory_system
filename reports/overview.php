@@ -3,206 +3,248 @@ session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 
-// Fetch all inventory items with added_by, specs, and status
-function fetchAllInventory($conn, $filters) {
-    $allItems = [];
+// Fetch inventory items efficiently using SQL-side filtering and pagination.
+function buildInventoryUnion($filters, &$params) {
+    $sources = [
+        [
+            'category' => 'Device',
+            'sql' => "SELECT d.model_name AS item_name, 'Device' AS category,
+                           d.branch, d.date_added, d.serial_number AS ref_id,
+                           'device' AS source, d.added_by, u.full_name AS added_by_name,
+                           d.status,
+                           CONCAT(
+                               d.processor, ' | ',
+                               d.ram, 'GB RAM | ',
+                               d.storage_type, ' ', d.storage_capacity, 'GB',
+                               IFNULL(CONCAT(' | ', d.graphics), ''),
+                               IF(c.category_name IN ('Laptop', 'AIO', 'POS'), CONCAT(' | ', d.touch), '')
+                           ) AS specs
+                    FROM devices d
+                    LEFT JOIN users u ON d.added_by = u.id
+                    LEFT JOIN categories c ON d.category_id = c.id"
+        ],
+        [
+            'category' => 'Monitor',
+            'sql' => "SELECT m.model_name AS item_name, 'Monitor' AS category,
+                           m.branch, m.date_added, m.serial_number AS ref_id,
+                           'monitor' AS source, m.added_by, u.full_name AS added_by_name,
+                           m.status,
+                           CONCAT(m.size_inches, ' inch') AS specs
+                    FROM monitors m
+                    LEFT JOIN users u ON m.added_by = u.id"
+        ],
+        [
+            'category' => 'Printer',
+            'sql' => "SELECT p.model_name AS item_name, 'Printer' AS category,
+                           p.branch, p.date_added, p.serial_number AS ref_id,
+                           'printer' AS source, p.added_by, u.full_name AS added_by_name,
+                           p.status,
+                           'N/A' AS specs
+                    FROM printers p
+                    LEFT JOIN users u ON p.added_by = u.id"
+        ],
+        [
+            'category' => 'Smartboard',
+            'sql' => "SELECT s.model AS item_name, 'Smartboard' AS category,
+                           s.branch, s.date_added, s.serial_number AS ref_id,
+                           'smartboard' AS source, s.added_by, u.full_name AS added_by_name,
+                           s.status,
+                           CONCAT(s.model, ' | ', s.size_inches, ' inch') AS specs
+                    FROM smartboards s
+                    LEFT JOIN users u ON s.added_by = u.id"
+        ],
+        [
+            'category' => 'Phone',
+            'sql' => "SELECT CONCAT(COALESCE(p.brand,''), ' ', COALESCE(p.model,'')) AS item_name,
+                           'Phone' AS category,
+                           p.branch, p.date_added, p.serial_number AS ref_id,
+                           'phone' AS source, p.added_by, u.full_name AS added_by_name,
+                           p.status,
+                           CONCAT(COALESCE(p.brand,''), ' ', COALESCE(p.model,''), ' | ',
+                                  p.ram, 'GB RAM | ', p.storage_capacity, 'GB') AS specs
+                    FROM phones p
+                    LEFT JOIN users u ON p.added_by = u.id"
+        ],
+        [
+            'category' => 'UPS',
+            'sql' => "SELECT ups.model AS item_name, 'UPS' AS category,
+                           ups.branch, ups.date_added, ups.serial_number AS ref_id,
+                           'ups' AS source, ups.added_by, usr.full_name AS added_by_name,
+                           ups.status,
+                           CONCAT(ups.model, ' | ', ups.capacity, ' VA') AS specs
+                    FROM ups ups
+                    LEFT JOIN users usr ON ups.added_by = usr.id"
+        ],
+        [
+            'category' => 'Accessory',
+            'sql' => "SELECT a.name AS item_name, 'Accessory' AS category,
+                           a.branch, a.date_added, CAST(a.id AS CHAR) AS ref_id,
+                           'accessory' AS source, a.added_by, u.full_name AS added_by_name,
+                           a.status,
+                           CONCAT('Qty: ', a.quantity, ' | ', COALESCE(a.price, 'No price')) AS specs
+                    FROM accessories a
+                    LEFT JOIN users u ON a.added_by = u.id"
+        ],
+        [
+            'category' => 'Charger',
+            'sql' => "SELECT c.charger_type AS item_name, 'Charger' AS category,
+                           c.branch, c.date_updated AS date_added, CAST(c.id AS CHAR) AS ref_id,
+                           'charger' AS source, c.updated_by AS added_by, u.full_name AS added_by_name,
+                           IF(c.quantity > 0, 'In Stock', 'Out of Stock') AS status,
+                           CONCAT(c.charger_condition, ' | Qty: ', c.quantity) AS specs
+                    FROM chargers c
+                    LEFT JOIN users u ON c.updated_by = u.id"
+        ],
+        [
+            'category' => 'HDD',
+            'sql' => "SELECT CONCAT(h.type, ' ', h.storage) AS item_name, 'HDD' AS category,
+                           h.branch, h.date_added, CAST(h.id AS CHAR) AS ref_id,
+                           'hdd' AS source, h.added_by, u.full_name AS added_by_name,
+                           IF(h.quantity > 0, 'In Stock', 'Out of Stock') AS status,
+                           CONCAT('Qty: ', h.quantity, ' | ', COALESCE(h.price, 'No price')) AS specs
+                    FROM hdds h
+                    LEFT JOIN users u ON h.added_by = u.id"
+        ],
+        [
+            'category' => 'RAM/SSD',
+            'sql' => "SELECT CONCAT(r.category, ' ', r.type, ' ', r.storage, 'GB') AS item_name,
+                           'RAM/SSD' AS category,
+                           r.branch, r.date_added, CAST(r.id AS CHAR) AS ref_id,
+                           'ram_ssd' AS source, r.added_by, u.full_name AS added_by_name,
+                           IF(r.quantity > 0, 'In Stock', 'Out of Stock') AS status,
+                           CONCAT('Qty: ', r.quantity, ' | ', COALESCE(r.price, 'No price')) AS specs
+                    FROM rams_ssds r
+                    LEFT JOIN users u ON r.added_by = u.id"
+        ],
+        [
+            'category' => 'Graphics Card',
+            'sql' => "SELECT CONCAT(g.type, ' ', g.storage_capacity, 'GB') AS item_name,
+                           'Graphics Card' AS category,
+                           g.branch, g.date_added, CAST(g.id AS CHAR) AS ref_id,
+                           'graphic' AS source, g.added_by, u.full_name AS added_by_name,
+                           g.status,
+                           CONCAT('Qty: ', g.quantity, ' | ', COALESCE(g.price, 'No price')) AS specs
+                    FROM graphic_cards g
+                    LEFT JOIN users u ON g.added_by = u.id"
+        ]
+    ];
 
-    // 1. Devices
-    $sql = "SELECT d.model_name AS item_name, 'Device' AS category,
-                   d.branch, d.date_added, d.serial_number AS ref_id,
-                   'device' AS source, d.added_by, u.full_name AS added_by_name,
-                   d.status,
-                   CONCAT(
-                       d.processor, ' | ',
-                       d.ram, 'GB RAM | ',
-                       d.storage_type, ' ', d.storage_capacity, 'GB',
-                       IFNULL(CONCAT(' | ', d.graphics), ''),
-                       IF(c.category_name IN ('Laptop', 'AIO', 'POS'), CONCAT(' | ', d.touch), '')
-                   ) AS specs
-            FROM devices d
-            LEFT JOIN users u ON d.added_by = u.id
-            LEFT JOIN categories c ON d.category_id = c.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+    $parts = [];
+    $sourceIndex = 0;
 
-    // 2. Monitors
-    $sql = "SELECT m.model_name AS item_name, 'Monitor' AS category,
-                   m.branch, m.date_added, m.serial_number AS ref_id,
-                   'monitor' AS source, m.added_by, u.full_name AS added_by_name,
-                   m.status,
-                   CONCAT(m.size_inches, ' inch') AS specs
-            FROM monitors m
-            LEFT JOIN users u ON m.added_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+    foreach ($sources as $source) {
+        if (!empty($filters['category']) && strcasecmp($filters['category'], $source['category']) !== 0) {
+            continue;
+        }
 
-    // 3. Printers
-    $sql = "SELECT p.model_name AS item_name, 'Printer' AS category,
-                   p.branch, p.date_added, p.serial_number AS ref_id,
-                   'printer' AS source, p.added_by, u.full_name AS added_by_name,
-                   p.status,
-                   'N/A' AS specs
-            FROM printers p
-            LEFT JOIN users u ON p.added_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+        $sourceIndex++;
+        $where = [];
+        $localParams = [];
 
-    // 4. Smartboards
-    $sql = "SELECT s.model AS item_name, 'Smartboard' AS category,
-                   s.branch, s.date_added, s.serial_number AS ref_id,
-                   'smartboard' AS source, s.added_by, u.full_name AS added_by_name,
-                   s.status,
-                   CONCAT(s.model, ' | ', s.size_inches, ' inch') AS specs
-            FROM smartboards s
-            LEFT JOIN users u ON s.added_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+        if (!empty($filters['branch'])) {
+            $key = "branch_{$sourceIndex}";
+            $where[] = "src.branch = :{$key}";
+            $localParams[$key] = $filters['branch'];
+        }
 
-    // 5. Phones
-    $sql = "SELECT CONCAT(COALESCE(p.brand,''), ' ', COALESCE(p.model,'')) AS item_name,
-                   'Phone' AS category,
-                   p.branch, p.date_added, p.serial_number AS ref_id,
-                   'phone' AS source, p.added_by, u.full_name AS added_by_name,
-                   p.status,
-                   CONCAT(COALESCE(p.brand,''), ' ', COALESCE(p.model,''), ' | ',
-                          p.ram, 'GB RAM | ', p.storage_capacity, 'GB') AS specs
-            FROM phones p
-            LEFT JOIN users u ON p.added_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+        if (!empty($filters['added_by'])) {
+            $key = "added_by_{$sourceIndex}";
+            $where[] = "src.added_by = :{$key}";
+            $localParams[$key] = (int)$filters['added_by'];
+        }
 
-    // 6. UPS
-    $sql = "SELECT u.model AS item_name, 'UPS' AS category,
-                   u.branch, u.date_added, u.serial_number AS ref_id,
-                   'ups' AS source, u.added_by, usr.full_name AS added_by_name,
-                   u.status,
-                   CONCAT(u.model, ' | ', u.capacity, ' VA') AS specs
-            FROM ups u
-            LEFT JOIN users usr ON u.added_by = usr.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+        if (!empty($filters['start_date'])) {
+            $key = "start_date_{$sourceIndex}";
+            $where[] = "src.date_added >= :{$key}";
+            $localParams[$key] = $filters['start_date'] . ' 00:00:00';
+        }
 
-    // 7. Accessories
-    $sql = "SELECT a.name AS item_name, 'Accessory' AS category,
-                   a.branch, a.date_added, CAST(a.id AS CHAR) AS ref_id,
-                   'accessory' AS source, a.added_by, u.full_name AS added_by_name,
-                   a.status,
-                   CONCAT('Qty: ', a.quantity, ' | ', COALESCE(a.price, 'No price')) AS specs
-            FROM accessories a
-            LEFT JOIN users u ON a.added_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+        if (!empty($filters['end_date'])) {
+            $key = "end_date_{$sourceIndex}";
+            $where[] = "src.date_added <= :{$key}";
+            $localParams[$key] = $filters['end_date'] . ' 23:59:59';
+        }
 
-    // 8. Chargers (no status column; derive from quantity)
-    $sql = "SELECT c.charger_type AS item_name, 'Charger' AS category,
-                   c.branch, c.date_updated AS date_added, CAST(c.id AS CHAR) AS ref_id,
-                   'charger' AS source, c.updated_by AS added_by, u.full_name AS added_by_name,
-                   IF(c.quantity > 0, 'In Stock', 'Out of Stock') AS status,
-                   CONCAT(c.charger_condition, ' | Qty: ', c.quantity) AS specs
-            FROM chargers c
-            LEFT JOIN users u ON c.updated_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+        if (!empty($filters['status'])) {
+            $key = "status_{$sourceIndex}";
+            $where[] = "(
+                CASE
+                    WHEN LOWER(src.status) IN ('in stock','instock') THEN 'In Stock'
+                    WHEN LOWER(src.status) = 'sold' THEN 'Sold'
+                    WHEN LOWER(src.status) = 'out of stock' THEN 'Out of Stock'
+                    ELSE src.status
+                END
+            ) = :{$key}";
+            $localParams[$key] = $filters['status'];
+        }
 
-    // 9. HDDs (no status column; derive from quantity)
-    $sql = "SELECT CONCAT(h.type, ' ', h.storage) AS item_name, 'HDD' AS category,
-                   h.branch, h.date_added, CAST(h.id AS CHAR) AS ref_id,
-                   'hdd' AS source, h.added_by, u.full_name AS added_by_name,
-                   IF(h.quantity > 0, 'In Stock', 'Out of Stock') AS status,
-                   CONCAT('Qty: ', h.quantity, ' | ', COALESCE(h.price, 'No price')) AS specs
-            FROM hdds h
-            LEFT JOIN users u ON h.added_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+        if (!empty($filters['search'])) {
+            $key = "search_{$sourceIndex}";
+            $where[] = "(src.item_name LIKE :{$key} OR src.ref_id LIKE :{$key} OR src.specs LIKE :{$key})";
+            $localParams[$key] = '%' . $filters['search'] . '%';
+        }
 
-    // 10. RAM/SSD (no status column; derive from quantity)
-    $sql = "SELECT CONCAT(r.category, ' ', r.type, ' ', r.storage, 'GB') AS item_name,
-                   'RAM/SSD' AS category,
-                   r.branch, r.date_added, CAST(r.id AS CHAR) AS ref_id,
-                   'ram_ssd' AS source, r.added_by, u.full_name AS added_by_name,
-                   IF(r.quantity > 0, 'In Stock', 'Out of Stock') AS status,
-                   CONCAT('Qty: ', r.quantity, ' | ', COALESCE(r.price, 'No price')) AS specs
-            FROM rams_ssds r
-            LEFT JOIN users u ON r.added_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
+        // Normalize all text columns to one widely supported utf8mb4 collation before UNION.
+        // This prevents MySQL/MariaDB "Illegal mix of collations" errors when inventory
+        // source tables were created with different collations.
+        $part = "SELECT
+                    CONVERT(src.item_name USING utf8mb4) COLLATE utf8mb4_general_ci AS item_name,
+                    CONVERT(src.category USING utf8mb4) COLLATE utf8mb4_general_ci AS category,
+                    CONVERT(src.branch USING utf8mb4) COLLATE utf8mb4_general_ci AS branch,
+                    src.date_added,
+                    CONVERT(src.ref_id USING utf8mb4) COLLATE utf8mb4_general_ci AS ref_id,
+                    CONVERT(src.source USING utf8mb4) COLLATE utf8mb4_general_ci AS source,
+                    src.added_by,
+                    CONVERT(src.added_by_name USING utf8mb4) COLLATE utf8mb4_general_ci AS added_by_name,
+                    CONVERT(src.status USING utf8mb4) COLLATE utf8mb4_general_ci AS status,
+                    CONVERT(src.specs USING utf8mb4) COLLATE utf8mb4_general_ci AS specs
+                 FROM (" . $source['sql'] . ") src";
+        if ($where) {
+            $part .= " WHERE " . implode(" AND ", $where);
+        }
 
-    // 11. Graphics Cards
-    $sql = "SELECT CONCAT(g.type, ' ', g.storage_capacity, 'GB') AS item_name,
-                   'Graphics Card' AS category,
-                   g.branch, g.date_added, CAST(g.id AS CHAR) AS ref_id,
-                   'graphic' AS source, g.added_by, u.full_name AS added_by_name,
-                   g.status,
-                   CONCAT('Qty: ', g.quantity, ' | ', COALESCE(g.price, 'No price')) AS specs
-            FROM graphic_cards g
-            LEFT JOIN users u ON g.added_by = u.id";
-    $allItems = array_merge($allItems, $conn->query($sql)->fetchAll(PDO::FETCH_ASSOC));
-
-    // --- Apply filters ---
-
-    // 1. Date range
-    if (!empty($filters['start_date']) && !empty($filters['end_date'])) {
-        $start = date('Y-m-d 00:00:00', strtotime($filters['start_date']));
-        $end   = date('Y-m-d 23:59:59', strtotime($filters['end_date']));
-        $allItems = array_filter($allItems, function($item) use ($start, $end) {
-            if (empty($item['date_added'])) return false;
-            $t = strtotime($item['date_added']);
-            return $t >= strtotime($start) && $t <= strtotime($end);
-        });
+        $parts[] = $part;
+        $params = array_merge($params, $localParams);
     }
 
-    // 2. Category filter
-    if (!empty($filters['category'])) {
-        $allItems = array_filter($allItems, function($item) use ($filters) {
-            return strcasecmp($item['category'], $filters['category']) === 0;
-        });
+    if (!$parts) {
+        return "SELECT NULL AS item_name, NULL AS category, NULL AS branch, NULL AS date_added,
+                       NULL AS ref_id, NULL AS source, NULL AS added_by, NULL AS added_by_name,
+                       NULL AS status, NULL AS specs
+                WHERE 1=0";
     }
 
-    // 3. Branch filter
-    if (!empty($filters['branch'])) {
-        $allItems = array_filter($allItems, function($item) use ($filters) {
-            return strcasecmp($item['branch'], $filters['branch']) === 0;
-        });
+    return implode(" UNION ALL ", $parts);
+}
+
+function fetchInventoryPage($conn, $filters, $limit, $offset) {
+    $params = [];
+    $unionSql = buildInventoryUnion($filters, $params);
+
+    $countStmt = $conn->prepare("SELECT COUNT(*) FROM ({$unionSql}) inventory_count");
+    foreach ($params as $key => $value) {
+        $countStmt->bindValue(':' . $key, $value);
     }
+    $countStmt->execute();
+    $total = (int)$countStmt->fetchColumn();
 
-    // 4. Added By filter
-    if (!empty($filters['added_by'])) {
-        $allItems = array_filter($allItems, function($item) use ($filters) {
-            return $item['added_by'] == $filters['added_by'];
-        });
+    $listSql = "SELECT *
+                FROM ({$unionSql}) inventory_list
+                ORDER BY date_added DESC
+                LIMIT :limit OFFSET :offset";
+
+    $listStmt = $conn->prepare($listSql);
+    foreach ($params as $key => $value) {
+        $listStmt->bindValue(':' . $key, $value);
     }
+    $listStmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+    $listStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+    $listStmt->execute();
 
-    // 5. Status filter
-    if (!empty($filters['status'])) {
-        $statusFilter = $filters['status'];
-        $allItems = array_filter($allItems, function($item) use ($statusFilter) {
-            $itemStatus = $item['status'] ?? 'Unknown';
-            // Normalize status values for comparison
-            $normalized = '';
-            if (strtolower($itemStatus) === 'in stock' || strtolower($itemStatus) === 'instock') {
-                $normalized = 'In Stock';
-            } elseif (strtolower($itemStatus) === 'sold') {
-                $normalized = 'Sold';
-            } elseif (strtolower($itemStatus) === 'out of stock') {
-                $normalized = 'Out of Stock';
-            } else {
-                $normalized = $itemStatus;
-            }
-            return strcasecmp($normalized, $statusFilter) === 0;
-        });
-    }
-
-    // 6. Search filter (item_name, ref_id, specs)
-    if (!empty($filters['search'])) {
-        $search = strtolower($filters['search']);
-        $allItems = array_filter($allItems, function($item) use ($search) {
-            $name = strtolower($item['item_name'] ?? '');
-            $ref = strtolower($item['ref_id'] ?? '');
-            $specs = strtolower($item['specs'] ?? '');
-            return strpos($name, $search) !== false ||
-                   strpos($ref, $search) !== false ||
-                   strpos($specs, $search) !== false;
-        });
-    }
-
-    // Sort by date_added descending
-    usort($allItems, function($a, $b) {
-        $ta = $a['date_added'] ? strtotime($a['date_added']) : 0;
-        $tb = $b['date_added'] ? strtotime($b['date_added']) : 0;
-        return $tb - $ta;
-    });
-
-    return $allItems;
+    return [
+        'items' => $listStmt->fetchAll(PDO::FETCH_ASSOC),
+        'total' => $total
+    ];
 }
 
 // Get distinct categories from all tables
@@ -280,6 +322,14 @@ $filter_branch = $_GET['filter_branch'] ?? '';
 $filter_added_by = $_GET['filter_added_by'] ?? '';
 $filter_status = $_GET['filter_status'] ?? '';
 
+$allowed_per_page = [100, 200, 300, 400, 500];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 100;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 100;
+}
+
+$page = max(1, (int)($_GET['page'] ?? 1));
+
 $filters = [
     'category'   => $filter_category,
     'search'     => $filter_search,
@@ -290,13 +340,50 @@ $filters = [
     'status'     => $filter_status
 ];
 
-// Renamed variable to avoid conflict with sidebar's $items
-$inventoryItems = fetchAllInventory($conn, $filters);
 $categories = getCategories($conn);
 $branches = getBranches($conn);
 $users = getAddedByUsers($conn);
 
-$total_count = count($inventoryItems);
+// First lightweight count so we can clamp the requested page.
+$countParams = [];
+$countUnion = buildInventoryUnion($filters, $countParams);
+$countStmt = $conn->prepare("SELECT COUNT(*) FROM ({$countUnion}) inventory_count");
+foreach ($countParams as $key => $value) {
+    $countStmt->bindValue(':' . $key, $value);
+}
+$countStmt->execute();
+$total_count = (int)$countStmt->fetchColumn();
+
+$total_pages = max(1, (int)ceil($total_count / $per_page));
+if ($page > $total_pages) {
+    $page = $total_pages;
+}
+
+$offset = ($page - 1) * $per_page;
+
+// Load only the rows needed for the current page.
+$listParams = [];
+$listUnion = buildInventoryUnion($filters, $listParams);
+$listSql = "SELECT *
+            FROM ({$listUnion}) inventory_list
+            ORDER BY date_added DESC
+            LIMIT :limit OFFSET :offset";
+
+$listStmt = $conn->prepare($listSql);
+foreach ($listParams as $key => $value) {
+    $listStmt->bindValue(':' . $key, $value);
+}
+$listStmt->bindValue(':limit', $per_page, PDO::PARAM_INT);
+$listStmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$listStmt->execute();
+$inventoryItems = $listStmt->fetchAll(PDO::FETCH_ASSOC);
+
+function overviewPageUrl($pageNumber) {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
+
 $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 ?>
 
@@ -362,6 +449,13 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
         @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
         @media (max-width: 768px) { .filter-grid { grid-template-columns: 1fr; } .btn { width: 100%; justify-content: center; } .stats-row { flex-direction: column; } .filter-actions { flex-direction: column; align-items: stretch; } table { font-size: 0.75rem; } .specs-text { max-width: 200px; } }
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 0; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
     </style>
 </head>
 <body>
@@ -398,6 +492,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     <div class="filter-section">
         <div class="filter-title"><i class="fas fa-filter"></i> Filter Inventory</div>
         <form method="GET" class="filter-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="filter-group">
                 <label>Category</label>
                 <select name="filter_category">
@@ -450,7 +545,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                 <button type="submit" class="btn"><i class="fas fa-search"></i> Filter</button>
                 <a href="overview.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($inventoryItems)): ?>
-                    <a href="export_inventory_excel.php?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
+                    <a href="export_inventory_excel.php?<?= http_build_query(array_merge(array_diff_key($_GET, ['page' => true, 'per_page' => true]), ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
             </div>
         </form>
@@ -475,7 +570,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     </tr>
                 </thead>
                 <tbody>
-                    <?php $i = 1; foreach ($inventoryItems as $item): ?>
+                    <?php $i = $offset + 1; foreach ($inventoryItems as $item): ?>
                     <tr>
                         <td><?= $i++ ?></td>
                         <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
@@ -510,6 +605,52 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
             </table>
         <?php endif; ?>
     </div>
+
+    <?php if ($total_count > 0): ?>
+    <div class="pagination-bar">
+        <form method="GET" class="per-page-form">
+            <?php foreach ($_GET as $key => $value): ?>
+                <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                    <input type="hidden" name="<?= htmlspecialchars($key) ?>" value="<?= htmlspecialchars($value) ?>">
+                <?php endif; ?>
+            <?php endforeach; ?>
+            <label for="overviewPerPage">Show</label>
+            <select id="overviewPerPage" name="per_page" onchange="this.form.submit()">
+                <?php foreach ($allowed_per_page as $size): ?>
+                    <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                <?php endforeach; ?>
+            </select>
+            <span>per page</span>
+        </form>
+
+        <div class="pagination-controls">
+            <?php if ($page > 1): ?>
+                <a href="<?= htmlspecialchars(overviewPageUrl($page - 1)) ?>">Previous</a>
+            <?php else: ?>
+                <span class="disabled">Previous</span>
+            <?php endif; ?>
+
+            <?php
+            $startPage = max(1, $page - 2);
+            $endPage = min($total_pages, $page + 2);
+            for ($p = $startPage; $p <= $endPage; $p++):
+            ?>
+                <?php if ($p === $page): ?>
+                    <span class="active"><?= $p ?></span>
+                <?php else: ?>
+                    <a href="<?= htmlspecialchars(overviewPageUrl($p)) ?>"><?= $p ?></a>
+                <?php endif; ?>
+            <?php endfor; ?>
+
+            <?php if ($page < $total_pages): ?>
+                <a href="<?= htmlspecialchars(overviewPageUrl($page + 1)) ?>">Next</a>
+            <?php else: ?>
+                <span class="disabled">Next</span>
+            <?php endif; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
 
