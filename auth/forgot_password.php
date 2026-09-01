@@ -94,7 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         unset($_SESSION['forgot_email']);
 
                         $_SESSION['success_message'] = "Your password has been reset successfully. Please log in with your new password.";
-                        header("Location: login.php");
+                        header("Location: login");
                         exit();
                     } catch (PDOException $e) {
                         $error = "Database error: " . $e->getMessage();
@@ -380,7 +380,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
 
             <div class="back-link">
-                <a href="login.php"><i class="fas fa-arrow-left"></i> Back to Login</a>
+                <a href="login"><i class="fas fa-arrow-left"></i> Back to Login</a>
             </div>
 
         <?php else: ?>
@@ -427,7 +427,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
 
             <div class="back-link">
-                <a href="login.php"><i class="fas fa-arrow-left"></i> Back to Login</a>
+                <a href="login"><i class="fas fa-arrow-left"></i> Back to Login</a>
             </div>
         <?php endif; ?>
     </div>

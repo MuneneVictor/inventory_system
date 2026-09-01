@@ -154,7 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $conn->commit();
 
                     $_SESSION['success'] = "User {$old['full_name']} created successfully.";
-                    header("Location: view_users.php");
+                    header("Location: view_users");
                     exit();
                 }
             }
@@ -453,14 +453,14 @@ require_once "../includes/header.php";
     <div class="page-header">
         <div class="page-header-row">
             <h1><i class="fas fa-user-plus"></i> Add New User</h1>
-            <a href="generate_code.php" class="header-action">
+            <a href="generate_code" class="header-action">
                 <i class="fas fa-paper-plane"></i> Send Registration Invite Code
             </a>
         </div>
         <div class="breadcrumb">
-            <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <span> / </span>
-            <a href="view_users.php">Users</a>
+            <a href="view_users">Users</a>
             <span> / </span>
             <span>Add New User</span>
         </div>
@@ -589,7 +589,7 @@ require_once "../includes/header.php";
                 </div>
 
                 <div class="actions">
-                    <a href="view_users.php" class="btn btn-secondary">
+                    <a href="view_users" class="btn btn-secondary">
                         <i class="fas fa-arrow-left"></i> Cancel
                     </a>
 

@@ -474,9 +474,9 @@ $roles = ['manager','inventory_admin','technician','software','sales', 'cashier'
             Generate Registration Code
         </h1>
         <div class="breadcrumb">
-            <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <span> / </span>
-            <a href="view_users.php">Users</a>
+            <a href="view_users">Users</a>
             <span> / </span>
             <span>Generate Code</span>
         </div>
@@ -535,7 +535,7 @@ $roles = ['manager','inventory_admin','technician','software','sales', 'cashier'
                         </div>
                     </div>
 
-                    <a href="add_user.php" class="btn btn-secondary">
+                    <a href="add_user" class="btn btn-secondary">
                         <i class="fas fa-user-plus"></i> Add User Manually
                     </a>
 

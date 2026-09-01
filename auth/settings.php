@@ -210,9 +210,9 @@ require_once "../includes/sidebar.php";
     <div class="page-header">
         <h1><i class="fas fa-user-clock"></i> Login Access Settings</h1>
         <div class="breadcrumb">
-            <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <span> / </span>
-            <a href="view_users.php">Users</a>
+            <a href="view_users">Users</a>
             <span> / Login Access Settings</span>
         </div>
     </div>
@@ -306,7 +306,7 @@ require_once "../includes/sidebar.php";
 
         <div class="actions">
             <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Login Settings</button>
-            <a href="view_users.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Users</a>
+            <a href="view_users" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Users</a>
         </div>
     </form>
 </div>

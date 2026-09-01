@@ -36,14 +36,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['user_id']) && !isset(
     // Validate CSRF
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $_SESSION['error'] = "Security validation failed. Please try again.";
-        header("Location: view_users.php");
+        header("Location: view_users");
         exit();
     }
 
     $uid = (int)$_POST['user_id'];
     if ($uid <= 0) {
         $_SESSION['error'] = "Invalid user ID.";
-        header("Location: view_users.php");
+        header("Location: view_users");
         exit();
     }
 
@@ -53,13 +53,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['user_id']) && !isset(
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$user) {
         $_SESSION['error'] = "User not found.";
-        header("Location: view_users.php");
+        header("Location: view_users");
         exit();
     }
 
     // Store user ID in session and redirect to GET version of this page
     $_SESSION['reset_user_id'] = $uid;
-    header("Location: reset_password.php");
+    header("Location: reset_password");
     exit();
 }
 
@@ -77,7 +77,7 @@ if (isset($_GET['id']) && is_numeric($_GET['id'])) {
 } else {
     // No user specified, redirect to view_users
     $_SESSION['error'] = "No user specified.";
-    header("Location: view_users.php");
+    header("Location: view_users");
     exit();
 }
 
@@ -87,7 +87,7 @@ $stmt->execute(['id' => $user_id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$user) {
     $_SESSION['error'] = "User not found.";
-    header("Location: view_users.php");
+    header("Location: view_users");
     exit();
 }
 $user_email = $user['email'];
@@ -438,9 +438,9 @@ unset($_SESSION['reset_user_id']);
             Reset User Password
         </h1>
         <div class="breadcrumb">
-            <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <span> / </span>
-            <a href="view_users.php">Users</a>
+            <a href="view_users">Users</a>
             <span> / </span>
             <span>Reset Password</span>
         </div>
@@ -492,7 +492,7 @@ unset($_SESSION['reset_user_id']);
                         <button type="submit" class="btn btn-primary" onclick="return confirm('Send a password reset code to <?= htmlspecialchars($user_email) ?>?')">
                             <i class="fas fa-paper-plane"></i> Send Reset Code
                         </button>
-                        <a href="view_users.php" class="btn btn-secondary">
+                        <a href="view_users" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Cancel
                         </a>
                     </div>

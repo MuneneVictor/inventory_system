@@ -122,7 +122,7 @@ if (isset($_GET['id']) && is_numeric($_GET['id'])) {
     $user_id = (int)$_POST['user_id'];
 } else {
     $_SESSION['error'] = "No user specified.";
-    header("Location: view_users.php");
+    header("Location: view_users");
     exit();
 }
 
@@ -135,14 +135,14 @@ if ($user_id > 0 && !$user_data) {
 
 if (!$user_data) {
     $_SESSION['error'] = "User not found.";
-    header("Location: view_users.php");
+    header("Location: view_users");
     exit();
 }
 
 // Prevent editing own account
 if ($user_id == $_SESSION['user_id']) {
     $_SESSION['error'] = "To edit your own account, go to your profile settings.";
-    header("Location: view_users.php");
+    header("Location: view_users");
     exit();
 }
 
@@ -530,9 +530,9 @@ if (isset($_SESSION['error'])) {
             Edit User
         </h1>
         <div class="breadcrumb">
-            <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <span> / </span>
-            <a href="view_users.php">Users</a>
+            <a href="view_users">Users</a>
             <span> / </span>
             <span>Edit User</span>
         </div>
@@ -640,7 +640,7 @@ if (isset($_SESSION['error'])) {
                         <button type="submit" class="btn btn-primary" onclick="return confirmUpdate()">
                             <i class="fas fa-save"></i> Update User
                         </button>
-                        <a href="view_users.php" class="btn btn-secondary">
+                        <a href="view_users" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Cancel
                         </a>
                         <button type="button" class="btn btn-danger" onclick="if(confirm('Are you sure you want to delete this user? This action cannot be undone!')) { window.location.href='delete_user.php?id=<?= $user_data['id'] ?>&csrf_token=<?= htmlspecialchars($_SESSION['csrf_token']) ?>'; }">

@@ -594,19 +594,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Redirect based on role
                     if ($_SESSION['role'] === 'super_admin') {
-                        header("Location: ../dashboard/superadmindashboard.php");
+                        header("Location: ../dashboard/superadmindashboard");
                     } elseif ($_SESSION['role'] === 'manager') {
-                        header("Location: ../dashboard/managerdashboard.php");
+                        header("Location: ../dashboard/managerdashboard");
                     } elseif ($_SESSION['role'] === 'inventory_admin') {
-                        header("Location: ../dashboard/inventorydashboard.php");
+                        header("Location: ../dashboard/inventorydashboard");
                     } elseif ($_SESSION['role'] === 'sales'){
-                        header("Location: ../dashboard/salesdashboard.php");
+                        header("Location: ../dashboard/salesdashboard");
                     } elseif ($_SESSION['role'] === 'software'){
-                        header("Location: ../dashboard/softwaredashboard.php");
+                        header("Location: ../dashboard/softwaredashboard");
                     } elseif ($_SESSION['role'] === 'technician'){
-                        header("Location: ../dashboard/techniciandashboard.php");
+                        header("Location: ../dashboard/techniciandashboard");
                     } elseif ($_SESSION['role'] === 'cashier'){
-                        header("Location: ../dashboard/cashierdashboard.php");
+                        header("Location: ../dashboard/cashierdashboard");
                     }
                     exit();
                     } // end login access policy allowed
@@ -710,19 +710,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Default redirect based on role
                     if ($_SESSION['role'] === 'super_admin') {
-                        header("Location: ../dashboard/superadmindashboard.php");
+                        header("Location: ../dashboard/superadmindashboard");
                     } elseif ($_SESSION['role'] === 'manager') {
-                        header("Location: ../dashboard/managerdashboard.php");
+                        header("Location: ../dashboard/managerdashboard");
                     } elseif ($_SESSION['role'] === 'inventory_admin') {
-                        header("Location: ../dashboard/inventorydashboard.php");
+                        header("Location: ../dashboard/inventorydashboard");
                     } elseif ($_SESSION['role'] === 'sales'){
-                        header("Location: ../dashboard/salesdashboard.php");
+                        header("Location: ../dashboard/salesdashboard");
                     } elseif ($_SESSION['role'] === 'software'){
-                        header("Location: ../dashboard/softwaredashboard.php");
+                        header("Location: ../dashboard/softwaredashboard");
                     } elseif ($_SESSION['role'] === 'technician'){
-                        header("Location: ../dashboard/techniciandashboard.php");
+                        header("Location: ../dashboard/techniciandashboard");
                     } elseif ($_SESSION['role'] === 'cashier'){
-                        header("Location: ../dashboard/cashierdashboard.php");
+                        header("Location: ../dashboard/cashierdashboard");
                     }
                     exit();
                 }
@@ -761,19 +761,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     
                     // Default redirect based on role
                     if ($_SESSION['role'] === 'super_admin') {
-                        header("Location: ../dashboard/superadmindashboard.php");
+                        header("Location: ../dashboard/superadmindashboard");
                     } elseif ($_SESSION['role'] === 'manager') {
-                        header("Location: ../dashboard/managerdashboard.php");
+                        header("Location: ../dashboard/managerdashboard");
                     } elseif ($_SESSION['role'] === 'inventory_admin') {
-                        header("Location: ../dashboard/inventorydashboard.php");
+                        header("Location: ../dashboard/inventorydashboard");
                     } elseif ($_SESSION['role'] === 'sales'){
-                        header("Location: ../dashboard/salesdashboard.php");
+                        header("Location: ../dashboard/salesdashboard");
                     } elseif ($_SESSION['role'] === 'software'){
-                        header("Location: ../dashboard/softwaredashboard.php");
+                        header("Location: ../dashboard/softwaredashboard");
                     } elseif ($_SESSION['role'] === 'technician'){
-                        header("Location: ../dashboard/techniciandashboard.php");
+                        header("Location: ../dashboard/techniciandashboard");
                     } elseif ($_SESSION['role'] === 'cashier'){
-                        header("Location: ../dashboard/cashierdashboard.php");
+                        header("Location: ../dashboard/cashierdashboard");
                     }
                     exit();
                 } elseif ($device && $device['is_verified'] == 0) {
@@ -1345,7 +1345,7 @@ $cleanup->execute();
             </div>
             
             <div class="back-link">
-                <a href="login.php"><i class="fas fa-arrow-left"></i> Back to login</a>
+                <a href="login"><i class="fas fa-arrow-left"></i> Back to login</a>
             </div>
             
         <?php else: ?>
@@ -1382,13 +1382,13 @@ $cleanup->execute();
             </form>
 
             <div class="register-section">
-                <p>Don't have an account? <a href="register.php">Register</a></p>
+                <p>Don't have an account? <a href="register">Register</a></p>
             </div>
 
             <!-- NEW: Forgot password link appears after 3 failed attempts -->
             <?php if (isset($_SESSION['show_forgot_link']) && $_SESSION['show_forgot_link'] === true): ?>
                 <div class="forgot-section">
-                    <p>Forgot your password? <a href="forgot_password.php">Reset it here</a></p>
+                    <p>Forgot your password? <a href="forgot_password">Reset it here</a></p>
                 </div>
             <?php endif; ?>
             

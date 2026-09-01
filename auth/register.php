@@ -4,7 +4,7 @@ require_once "../config/db.php";
 require_once "../includes/header.php";
 
 if(!isset($_SESSION['reg_email'], $_SESSION['reg_role'], $_SESSION['reg_code_id'])){
-    header("Location: verify_code.php");
+    header("Location: verify_code");
     exit();
 }
 
@@ -56,7 +56,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
 
             unset($_SESSION['reg_email'], $_SESSION['reg_role'], $_SESSION['reg_code_id']);
 
-            header("Location: login.php");
+            header("Location: login");
             exit();
         }
     }
@@ -404,7 +404,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
         </form>
 
         <div class="back-link">
-            <a href="login.php"><i class="fas fa-chevron-left"></i> Back to Login</a>
+            <a href="login"><i class="fas fa-chevron-left"></i> Back to Login</a>
         </div>
     </div>
 

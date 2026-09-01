@@ -21,7 +21,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
         $_SESSION['reg_email'] = $email;
         $_SESSION['reg_role'] = $regCode['role'];
         $_SESSION['reg_code_id'] = $regCode['id'];
-        header("Location: register.php");
+        header("Location: register");
         exit();
 };
 }
@@ -337,7 +337,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
         </form>
 
         <div class="back-link">
-            <p>Already have an account? <a href="login.php">Login</a>
+            <p>Already have an account? <a href="login">Login</a>
         </div>
     </div>
 

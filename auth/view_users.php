@@ -12,7 +12,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_user_id']) && 
     // CSRF validation
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $_SESSION['error'] = "Security validation failed. Please try again.";
-        header("Location: view_users.php");
+        header("Location: view_users");
         exit();
     }
     
@@ -24,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_user_id']) && 
     // Prevent self toggle
     if ($toggle_id == $_SESSION['user_id']) {
         $_SESSION['error'] = "You cannot change your own status.";
-        header("Location: view_users.php");
+        header("Location: view_users");
         exit();
     }
     
@@ -54,7 +54,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['toggle_user_id']) && 
     if (!empty($_GET['branch'])) $query_params['branch'] = $_GET['branch'];
     if (!empty($_GET['role'])) $query_params['role'] = $_GET['role'];
     if (!empty($_GET['status'])) $query_params['status'] = $_GET['status'];
-    $redirect_url = "view_users.php" . (empty($query_params) ? "" : "?" . http_build_query($query_params));
+    $redirect_url = "view_users" . (empty($query_params) ? "" : "?" . http_build_query($query_params));
     
     header("Location: " . $redirect_url);
     exit();
@@ -65,7 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unlock_user_id'])) {
     // CSRF validation
     if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
         $_SESSION['error'] = "Security validation failed. Please try again.";
-        header("Location: view_users.php");
+        header("Location: view_users");
         exit();
     }
     
@@ -76,7 +76,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unlock_user_id'])) {
     // Prevent self unlock (though you can unlock yourself if needed)
     if ($unlock_id == $_SESSION['user_id']) {
         $_SESSION['error'] = "You can unlock your own account from the login page.";
-        header("Location: view_users.php");
+        header("Location: view_users");
         exit();
     }
     
@@ -103,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unlock_user_id'])) {
     if (!empty($_GET['branch'])) $query_params['branch'] = $_GET['branch'];
     if (!empty($_GET['role'])) $query_params['role'] = $_GET['role'];
     if (!empty($_GET['status'])) $query_params['status'] = $_GET['status'];
-    $redirect_url = "view_users.php" . (empty($query_params) ? "" : "?" . http_build_query($query_params));
+    $redirect_url = "view_users" . (empty($query_params) ? "" : "?" . http_build_query($query_params));
     
     header("Location: " . $redirect_url);
     exit();
@@ -112,7 +112,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['unlock_user_id'])) {
 // ========== NORMAL PAGE LOAD ==========
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
-require_once "../includes/header.php";
+
 
 $role = $_SESSION['role'] ?? '';
 $user_id = $_SESSION['user_id'] ?? 0;
@@ -772,7 +772,7 @@ unset($_SESSION['success'], $_SESSION['error']);
             User Management
         </h1>
         <div class="breadcrumb">
-            <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <span> / </span>
             <span>View Users</span>
         </div>
@@ -869,16 +869,16 @@ unset($_SESSION['success'], $_SESSION['error']);
                 <button type="submit" class="btn btn-primary">
                     <i class="fas fa-search"></i> Filter
                 </button>
-                <a href="view_users.php" class="btn btn-secondary">
+                <a href="view_users" class="btn btn-secondary">
                     <i class="fas fa-undo"></i> Reset
                 </a>
-                <a href="add_user.php" class="btn btn-success">
+                <a href="add_user" class="btn btn-success">
                     <i class="fas fa-user-plus"></i> Add New User
                 </a>
-                <a href="generate_code.php" class="btn btn-secondary">
+                <a href="generate_code" class="btn btn-secondary">
                     <i class="fas fa-key"></i> Generate Code
                 </a>
-                <a href="settings.php" class="btn btn-secondary">
+                <a href="settings" class="btn btn-secondary">
                     <i class="fas fa-clock"></i> Login Access Settings
                 </a>
             </div>
@@ -891,7 +891,7 @@ unset($_SESSION['success'], $_SESSION['error']);
                 <div class="empty-state">
                     <i class="fas fa-users-slash"></i>
                     <p>No users found matching your criteria.</p>
-                    <a href="view_users.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="view_users" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>
@@ -1003,7 +1003,7 @@ unset($_SESSION['success'], $_SESSION['error']);
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <a href="edit_user.php?id=<?= $u['id'] ?>" class="btn btn-secondary btn-sm">
+                                    <a href="edit_user?id=<?= $u['id'] ?>" class="btn btn-secondary btn-sm">
                                         <i class="fas fa-edit"></i> Edit
                                     </a>
                                     <?php if ($u['id'] != $_SESSION['user_id']): ?>
