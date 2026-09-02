@@ -145,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['return_charger'])) {
 
                 // Clear output buffer and redirect
                 ob_end_clean();
-                header("Location: charger_logs.php?success=1");
+                header("Location: charger_logs?success=1");
                 exit;
 
             } catch (Exception $e) {
@@ -615,11 +615,11 @@ function paginationPageUrl($pageNumber) {
         <h1><i class="fas fa-history"></i> Charger Logs</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Charger Logs</span>
@@ -697,9 +697,9 @@ function paginationPageUrl($pageNumber) {
             </div>
             <div class="search-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="charger_logs.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="charger_logs" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($logs)): ?>
-                    <a href="export_charger_logs_excel.php?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
+                    <a href="export_charger_logs_excel?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
             </div>
         </form>
@@ -712,7 +712,7 @@ function paginationPageUrl($pageNumber) {
                 <div class="empty-state">
                     <i class="fas fa-history"></i>
                     <p>No charger logs found matching your criteria.</p>
-                    <a href="charger_logs.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="charger_logs" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>
