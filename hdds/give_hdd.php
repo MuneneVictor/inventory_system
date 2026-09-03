@@ -190,9 +190,9 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     <div class="page-header">
         <h1><i class="fas fa-hdd"></i> Give Out HDD</h1>
         <div class="breadcrumb">
-            <a href="../dashboard/<?= $user_role === 'super_admin' ? 'superadmindashboard.php' : 'inventorydashboard.php' ?>">Dashboard</a>
+            <a href="../dashboard/<?= $user_role === 'super_admin' ? 'superadmindashboard' : 'inventorydashboard' ?>">Dashboard</a>
             <span> / </span>
-            <a href="hdd_instock.php">HDD Stock</a>
+            <a href="hdd_instock">HDD Stock</a>
             <span> / </span>
             <span>Give Out</span>
         </div>

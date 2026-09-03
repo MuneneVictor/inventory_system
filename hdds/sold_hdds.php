@@ -114,7 +114,6 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
     $stmt = $conn->query("SELECT id, full_name FROM users WHERE role IN ('sales') ORDER BY full_name");
     $sales_users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
-require_once "../includes/sidebar.php";
 ?>
 
 <!DOCTYPE html>
@@ -393,21 +392,21 @@ require_once "../includes/sidebar.php";
     </style>
 </head>
 <body>
-
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-hdd"></i> Sold HDDs</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard""><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard""><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard""><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'sales'): ?>
-                <a href="../dashboard/salesdashboard""><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/salesdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'cashier'): ?>
-                <a href="../dashboard/cashierdashboard""><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/cashierdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Sold HDDs</span>

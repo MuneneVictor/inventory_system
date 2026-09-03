@@ -214,8 +214,11 @@ if ($date_to) {
     $params['date_to'] = $date_to;
 }
 if ($search) {
-    $sql .= " AND (l.accessory_name LIKE :search OR u_given_to.full_name LIKE :search OR u_given_by.full_name LIKE :search)";
-    $params['search'] = "%$search%";
+    $sql .= " AND (l.accessory_name LIKE :search_accessory OR u_given_to.full_name LIKE :search_given_to OR u_given_by.full_name LIKE :search_given_by)";
+    $searchValue = "%$search%";
+    $params['search_accessory'] = $searchValue;
+    $params['search_given_to'] = $searchValue;
+    $params['search_given_by'] = $searchValue;
 }
 
 $__baseSql = $sql;

@@ -968,7 +968,7 @@ function safe($value) {
             <img src="../assets/MC-LOGO.png" alt="Mombasa Computers" onerror="this.style.display='none'">
         </div>
         <div>
-            <a href="../dashboard/cashierdashboard.php" class="link-btn">
+            <a href="../dashboard/cashierdashboard" class="link-btn">
                 <i class="fas fa-sync-alt"></i> Refresh
             </a>
         </div>
@@ -1037,7 +1037,7 @@ function safe($value) {
         <div class="section" style="margin-bottom: 0;">
             <div class="flex-between">
                 <h4><i class="fas fa-clock" style="color: var(--warning);"></i> Active Sales</h4>
-                <a href="../sales/active_sales.php" class="view-all-link">View All <i class="fas fa-arrow-right"></i></a>
+                <a href="../sales/active_sales" class="view-all-link">View All <i class="fas fa-arrow-right"></i></a>
             </div>
             <div class="table-responsive">
                 <table class="table">
@@ -1065,7 +1065,7 @@ function safe($value) {
     <div class="section">
         <div class="flex-between">
             <h4><i class="fas fa-history"></i> Recent Sales Transactions</h4>
-            <a href="../sales/sales_logs.php" class="view-all-link">View All <i class="fas fa-arrow-right"></i></a>
+            <a href="../sales/sales_logs" class="view-all-link">View All <i class="fas fa-arrow-right"></i></a>
         </div>
         <div class="table-responsive">
             <table class="table">
@@ -1090,19 +1090,19 @@ function safe($value) {
 
     <!-- Quick Action Buttons -->
     <div class="actions-row">
-        <a href="../sales/make_sale.php" class="link-btn">
+        <a href="../sales/make_sale" class="link-btn">
             <i class="fas fa-cash-register"></i> Process New Sale
         </a>
-        <a href="../sales/view_clients.php?search=" class="link-btn btn-outline">
+        <a href="../sales/view_clients?search=" class="link-btn btn-outline">
             <i class="fas fa-search"></i> Find Client
         </a>
-        <a href="../reports/daily_report.php" class="link-btn btn-outline">
+        <a href="../reports/daily_report" class="link-btn btn-outline">
             <i class="fas fa-chart-bar"></i> View Daily Report
         </a>
-        <a href="../sales/sales_logs.php" class="link-btn btn-outline">
+        <a href="../sales/sales_logs" class="link-btn btn-outline">
             <i class="fas fa-chart-line"></i> Sales Logs
         </a>
-        <a href="../sales/add_expense.php" class="link-btn btn-outline" style="border-color: var(--expense); color: var(--expense) !important;">
+        <a href="../sales/add_expense" class="link-btn btn-outline" style="border-color: var(--expense); color: var(--expense) !important;">
             <i class="fas fa-receipt"></i> Add Expense
         </a>
     </div>

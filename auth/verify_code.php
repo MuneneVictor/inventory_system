@@ -13,9 +13,7 @@ if($_SERVER['REQUEST_METHOD'] === 'POST'){
     $stmt = $conn->prepare("SELECT * FROM registration_codes WHERE email = :email AND code = :code AND is_used = 0");
     $stmt->execute(['email'=>$email, 'code'=>$code]);
     $regCode = $stmt->fetch(PDO::FETCH_ASSOC);
-    $expiry = $regCode['expiry'];
-    
-    if (!$regCode || strtotime($expiry) < time()){
+   if (!$regCode || strtotime($regCode['expiry']) < time()){
         $error = "Invalid or already used code for this email.";
     } else{
         $_SESSION['reg_email'] = $email;

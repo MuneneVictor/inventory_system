@@ -716,13 +716,13 @@ $hasFilters = !empty($filter_serial) || !empty($filter_client) || !empty($filter
             <h1><i class="fas fa-tools"></i> Devices Under Repair</h1>
             <div class="breadcrumb">
                 <?php if ($user_role === 'super_admin'): ?>
-                    <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                    <a href="../dashboard/superadmindashboard">Dashboard</a>
                 <?php elseif ($user_role === 'manager'): ?>
-                    <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                    <a href="../dashboard/managerdashboard">Dashboard</a>
                 <?php elseif ($user_role === 'inventory_admin'): ?>
-                    <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                    <a href="../dashboard/inventorydashboard">Dashboard</a>
                 <?php else: ?>
-                    <a href="../dashboard/techniciandashboard.php">Dashboard</a>
+                    <a href="../dashboard/techniciandashboard">Dashboard</a>
                 <?php endif; ?>
                 <span> / </span>
                 <span>Under Repair</span>
@@ -830,7 +830,7 @@ $hasFilters = !empty($filter_serial) || !empty($filter_client) || !empty($filter
                             <i class="fas fa-search"></i> Apply Filters
                         </button>
                         <?php if ($hasFilters): ?>
-                            <a href="under_repair.php" class="btn btn-secondary">
+                            <a href="under_repair" class="btn btn-secondary">
                                 <i class="fas fa-undo"></i> Reset
                             </a>
                         <?php endif; ?>
@@ -895,7 +895,7 @@ $hasFilters = !empty($filter_serial) || !empty($filter_client) || !empty($filter
                         </span>
                     <?php endif; ?>
 
-                    <a href="under_repair.php" class="filter-tag" style="background:#fee2e2; border-color:#fecaca; color:#991b1b;">
+                    <a href="under_repair" class="filter-tag" style="background:#fee2e2; border-color:#fecaca; color:#991b1b;">
                         <i class="fas fa-undo"></i> Clear All
                     </a>
                 </div>
@@ -937,14 +937,14 @@ $hasFilters = !empty($filter_serial) || !empty($filter_client) || !empty($filter
                     <p>No devices currently under repair.</p>
                     <?php if ($user_role === 'technician'): ?>
                         <p style="font-size:0.85rem; margin-top:0.5rem; color:var(--gray-400);">
-                            <a href="add_repair.php">
+                            <a href="add_repair">
                                 <i class="fas fa-plus-circle"></i> Add a new repair
                             </a>
                         </p>
                     <?php endif; ?>
                     <?php if ($hasFilters): ?>
                         <p style="font-size:0.85rem; margin-top:0.5rem; color:var(--gray-400);">
-                            <a href="under_repair.php" style="color:var(--primary);">
+                            <a href="under_repair" style="color:var(--primary);">
                                 <i class="fas fa-undo"></i> Clear filters to see all
                             </a>
                         </p>
@@ -1004,7 +1004,7 @@ $hasFilters = !empty($filter_serial) || !empty($filter_client) || !empty($filter
                             <td><?= date('M j, Y H:i', strtotime($r['date_added'])) ?></td>
                             <?php if ($user_role === 'technician'): ?>
                                 <td>
-                                    <a href="complete_repair.php?id=<?= $r['id'] ?>" class="btn btn-success btn-sm">
+                                    <a href="complete_repair?id=<?= $r['id'] ?>" class="btn btn-success btn-sm">
                                         <i class="fas fa-check"></i> Complete
                                     </a>
                                 </td>

@@ -307,7 +307,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $_SESSION['success_message'] = $successMsg;
             
-            header("Location: under_repair.php");
+            header("Location: under_repair");
             exit();
             
         } catch (Exception $e) {
@@ -714,9 +714,9 @@ else $greeting = 'Good evening';
             Complete Repair
         </h1>
         <div class="breadcrumb">
-            <a href="../dashboard/techniciandashboard.php">Dashboard</a>
+            <a href="../dashboard/techniciandashboard">Dashboard</a>
             <span> / </span>
-            <a href="under_repair.php">Under Repair</a>
+            <a href="under_repair">Under Repair</a>
             <span> / </span>
             <span>Complete Repair</span>
         </div>
@@ -843,7 +843,7 @@ else $greeting = 'Good evening';
                     <button type="submit" class="btn btn-primary">
                         <i class="fas fa-check-circle"></i> Complete Repair
                     </button>
-                    <a href="under_repair.php" class="btn btn-secondary">
+                    <a href="under_repair" class="btn btn-secondary">
                         <i class="fas fa-times"></i> Cancel
                     </a>
                 </div>

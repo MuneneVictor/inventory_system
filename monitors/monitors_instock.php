@@ -124,11 +124,11 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         <h1><i class="fas fa-box"></i> In‑Stock Monitors</h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Monitors In Stock</span>
@@ -157,7 +157,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         <?php endif; ?>
         <div class="filter-group">
             <button type="submit" class="btn"><i class="fas fa-search"></i> Search</button>
-            <a href="monitors_instock.php" class="btn btn-secondary" style="background:var(--gray-500); margin-left:0.5rem;">Reset</a>
+            <a href="monitors_instock" class="btn btn-secondary" style="background:var(--gray-500); margin-left:0.5rem;">Reset</a>
         </div>
     </form>
 
@@ -187,7 +187,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                             <td class="<?= $m['branch'] === 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>"><?= htmlspecialchars($m['branch']) ?></td>
                             <td><?= htmlspecialchars($m['added_by']) ?></td>
                             <td><?= date('M j, Y', strtotime($m['date_added'])) ?></td>
-                            <td><a href="view_monitor.php?sn=<?= urlencode($m['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                            <td><a href="view_monitor?sn=<?= urlencode($m['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>

@@ -14,7 +14,7 @@ if (!in_array($user_role, ['sales', 'super_admin', 'manager', 'technician'])) {
 $quotation_id = $_GET['quotation_id'] ?? $_SESSION['quotation_id'] ?? 0;
 
 if (!$quotation_id) {
-    header("Location: write_quotation.php");
+    header("Location: write_quotation");
     exit;
 }
 
@@ -27,7 +27,7 @@ $stmt->execute([$quotation_id, $user_id]);
 $quotation = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$quotation) {
     unset($_SESSION['quotation_id']);
-    header("Location: write_quotation.php");
+    header("Location: write_quotation");
     exit;
 }
 
@@ -86,7 +86,7 @@ if (isset($_GET['remove_item'])) {
     $stmt = $conn->prepare("UPDATE quotations SET subtotal = ?, vat = ?, grand_total = ? WHERE id = ?");
     $stmt->execute([$totals['subtotal'] ?? 0, $totals['vat'] ?? 0, $totals['grand_total'] ?? 0, $quotation_id]);
     
-    header("Location: add_quotation_items.php");
+    header("Location: add_quotation_items");
     exit;
 }
 
@@ -96,7 +96,7 @@ if (isset($_GET['clear_all'])) {
     $stmt->execute([$quotation_id]);
     $stmt = $conn->prepare("UPDATE quotations SET subtotal = 0, vat = 0, grand_total = 0 WHERE id = ?");
     $stmt->execute([$quotation_id]);
-    header("Location: add_quotation_items.php");
+    header("Location: add_quotation_items");
     exit;
 }
 
@@ -172,7 +172,7 @@ $totals = $stmt->fetch(PDO::FETCH_ASSOC);
     <div class="page-header">
         <h1><i class="fas fa-boxes"></i> Add Items</h1>
         <div class="breadcrumb">
-            <a href="write_quotation.php">Write Quotation</a> / Add Items
+            <a href="write_quotation">Write Quotation</a> / Add Items
         </div>
     </div>
 
@@ -196,7 +196,7 @@ $totals = $stmt->fetch(PDO::FETCH_ASSOC);
             <span><strong>Quotation #:</strong> <?= htmlspecialchars($quotation['quotation_number']) ?></span>
             <span><strong>Client:</strong> <?= htmlspecialchars($quotation['client_name']) ?></span>
             <span><strong>Date:</strong> <?= htmlspecialchars($quotation['quotation_date']) ?></span>
-            <a href="write_quotation.php?reset=1" class="btn btn-secondary btn-sm"><i class="fas fa-undo"></i> Change Client</a>
+            <a href="write_quotation?reset=1" class="btn btn-secondary btn-sm"><i class="fas fa-undo"></i> Change Client</a>
         </div>
     </div>
 
@@ -283,7 +283,7 @@ $totals = $stmt->fetch(PDO::FETCH_ASSOC);
                                 <td><?= $item['vat_rate'] ?>%</td>
                                 <td><?= number_format($item['quantity'] * $item['unit_price'] * (1 + $item['vat_rate'] / 100), 2) ?></td>
                                 <td style="text-align:center;">
-                                    <a href="add_quotation_items.php?remove_item=<?= $item['id'] ?>" class="btn btn-danger btn-sm" onclick="return confirm('Remove this item?')">
+                                    <a href="add_quotation_items?remove_item=<?= $item['id'] ?>" class="btn btn-danger btn-sm" onclick="return confirm('Remove this item?')">
                                         <i class="fas fa-trash"></i>
                                     </a>
                                 </td>
@@ -300,7 +300,7 @@ $totals = $stmt->fetch(PDO::FETCH_ASSOC);
             </div>
             
             <div style="margin-top:1rem; display:flex; gap:1rem; flex-wrap:wrap;">
-                <a href="add_quotation_items.php?clear_all=1" class="btn btn-danger btn-sm" onclick="return confirm('Clear all items?')">
+                <a href="add_quotation_items?clear_all=1" class="btn btn-danger btn-sm" onclick="return confirm('Clear all items?')">
                     <i class="fas fa-trash"></i> Clear All
                 </a>
             </div>
@@ -310,9 +310,9 @@ $totals = $stmt->fetch(PDO::FETCH_ASSOC);
     <!-- Actions -->
     <div style="display:flex; gap:1rem; flex-wrap:wrap; margin-top:1rem;">
         <?php if (!empty($items)): ?>
-            <a href="review_quotation.php" class="btn btn-success"><i class="fas fa-eye"></i> Review Quotation</a>
+            <a href="review_quotation" class="btn btn-success"><i class="fas fa-eye"></i> Review Quotation</a>
         <?php endif; ?>
-        <a href="write_quotation.php?reset=1" class="btn btn-secondary"><i class="fas fa-undo"></i> Back to Client</a>
+        <a href="write_quotation?reset=1" class="btn btn-secondary"><i class="fas fa-undo"></i> Back to Client</a>
     </div>
 
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>

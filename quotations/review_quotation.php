@@ -14,7 +14,7 @@ if (!in_array($user_role, ['sales', 'super_admin', 'manager', 'technician'])) {
 $quotation_id = isset($_GET['id']) ? (int)$_GET['id'] : ($_SESSION['quotation_id'] ?? 0);
 
 if (!$quotation_id) {
-    header("Location: write_quotation.php");
+    header("Location: write_quotation");
     exit;
 }
 
@@ -41,7 +41,7 @@ if (!$quotation) {
         
         if (!$quotation) {
             unset($_SESSION['quotation_id']);
-            header("Location: write_quotation.php?error=not_found");
+            header("Location: write_quotation?error=not_found");
             exit;
         }
     }
@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel'])) {
         
         // Redirect to write_quotation.php with success message
         $_SESSION['quotation_cancelled'] = "Quotation #" . $quotation['quotation_number'] . " has been cancelled.";
-        header("Location: write_quotation.php");
+        header("Location: write_quotation");
         exit;
     }
 }
@@ -211,18 +211,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel'])) {
         <h1><i class="fas fa-file-invoice"></i> Review Quotation</h1>
         <div class="breadcrumb">
             <?php if($user_role === 'sales'): ?>
-                <a href="../dashboard/salesdashboard.php">Dashboard</a> /
+                <a href="../dashboard/salesdashboard">Dashboard</a> /
             <?php endif; ?>
             <?php if($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a> /
+                <a href="../dashboard/superadmindashboard">Dashboard</a> /
             <?php endif; ?>
             <?php if($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a> /
+                <a href="../dashboard/managerdashboard">Dashboard</a> /
             <?php endif; ?>
             <?php if($user_role === 'technician'): ?>
-                <a href="../dashboard/techniciandashboard.php">Dashboard</a> /
+                <a href="../dashboard/techniciandashboard">Dashboard</a> /
             <?php endif; ?>
-            <a href="quotations_list.php">Quotations</a> /
+            <a href="quotations_list">Quotations</a> /
             <span><?= htmlspecialchars($quotation['quotation_number']) ?></span>
         </div>
     </div>
@@ -337,7 +337,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel'])) {
                 </button>
             </form>
             
-            <a href="add_quotation_items.php" class="btn btn-secondary">
+            <a href="add_quotation_items" class="btn btn-secondary">
                 <i class="fas fa-edit"></i> Edit Items
             </a>
             
@@ -349,16 +349,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['cancel'])) {
         <?php endif; ?>
         
         <?php if ($quotation['status'] !== 'cancelled'): ?>
-            <a href="download_quotation_pdf.php?id=<?= $quotation_id ?>" class="btn" target="_blank">
+            <a href="download_quotation_pdf?id=<?= $quotation_id ?>" class="btn" target="_blank">
                 <i class="fas fa-file-pdf"></i> Download PDF
             </a>
         <?php endif; ?>
         
-        <a href="quotations_list.php" class="btn btn-secondary">
+        <a href="quotations_list" class="btn btn-secondary">
             <i class="fas fa-arrow-left"></i> Back to Quotations
         </a>
         
-        <a href="write_quotation.php?reset=1" class="btn btn-secondary">
+        <a href="write_quotation?reset=1" class="btn btn-secondary">
             <i class="fas fa-plus"></i> New Quotation
         </a>
     </div>

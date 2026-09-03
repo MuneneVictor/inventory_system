@@ -198,7 +198,7 @@ date_default_timezone_set('Africa/Nairobi');
     <div class="page-header">
         <h1><i class="fas fa-exclamation-triangle" style="color: var(--warning);"></i> Low Stock Items</h1>
         <div class="breadcrumb">
-            <a href="../dashboard/<?= $user_role === 'cashier' ? 'cashierdashboard.php' : ($user_role === 'inventory_admin' ? 'inventorydashboard.php' : 'superadmindashboard.php') ?>">Dashboard</a>
+            <a href="../dashboard/<?= $user_role === 'cashier' ? 'cashierdashboard' : ($user_role === 'inventory_admin' ? 'inventorydashboard' : 'superadmindashboard') ?>">Dashboard</a>
             <span> / </span>
             <span>Low Stock</span>
         </div>
@@ -229,7 +229,7 @@ date_default_timezone_set('Africa/Nairobi');
             </div>
             <div class="filter-group" style="flex-direction: row; align-items: flex-end; gap: 0.5rem;">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="low_stock_items.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="low_stock_items" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
             </div>
         </form>
     </div>

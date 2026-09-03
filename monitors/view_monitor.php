@@ -93,14 +93,14 @@ else $greeting = 'Good evening';
         <h1><i class="fas fa-desktop"></i> Monitor Details <span class="serial-code"><?= htmlspecialchars($monitor['serial_number']) ?></span></h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="monitors_instock.php">In‑Stock Monitors</a>
+            <a href="monitors_instock">In‑Stock Monitors</a>
             <span> / </span>
             <span>View Monitor</span>
         </div>
@@ -130,9 +130,9 @@ else $greeting = 'Good evening';
     </div>
 
     <div class="action-buttons">
-        <a href="monitors_instock.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Inventory</a>
+        <a href="monitors_instock" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Inventory</a>
         <?php if ($user_role === 'super_admin' || $user_role === 'inventory_admin'): ?>
-            <a href="edit_monitor.php?sn=<?= urlencode($monitor['serial_number']) ?>" class="btn"><i class="fas fa-edit"></i> Edit Monitor</a>
+            <a href="edit_monitor?sn=<?= urlencode($monitor['serial_number']) ?>" class="btn"><i class="fas fa-edit"></i> Edit Monitor</a>
         <?php endif; ?>
     </div>
 

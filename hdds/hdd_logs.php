@@ -174,9 +174,7 @@ if (isset($_GET['success'])) {
     $return_success = "HDD returned successfully!";
 }
 
-// Now include header and sidebar (after all processing)
-require_once "../includes/header.php";
-require_once "../includes/sidebar.php";
+
 
 // Get filter inputs
 $filter_branch = trim($_GET['branch'] ?? '');
@@ -627,17 +625,17 @@ if (in_array($role, ['super_admin', 'inventory_admin'])) {
     </style>
 </head>
 <body>
-
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-history"></i> HDD Logs</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard""><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard""><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard""><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>HDD Logs</span>

@@ -395,13 +395,13 @@ function paginationPageUrl($pageNumber) {
         <h1><i class="fas fa-bolt"></i> Sold Chargers</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'cashier'): ?>
-                <a href="../dashboard/cashierdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/cashierdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Sold Chargers</span>
@@ -480,9 +480,9 @@ function paginationPageUrl($pageNumber) {
             <?php endif; ?>
             <div class="search-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="sold_chargers.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="sold_chargers" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($sales)): ?>
-                    <a href="export_sold_chargers_excel.php?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
+                    <a href="export_sold_chargers_excel?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
             </div>
         </form>
@@ -495,7 +495,7 @@ function paginationPageUrl($pageNumber) {
                 <div class="empty-state">
                     <i class="fas fa-bolt"></i>
                     <p>No sold chargers found matching your criteria.</p>
-                    <a href="sold_chargers.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="sold_chargers" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>

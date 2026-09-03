@@ -2,8 +2,7 @@
 session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
-require_once "../includes/header.php";
-require_once "../includes/sidebar.php";
+
 
 if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin', 'manager'])) {
     die("ACCESS DENIED.");
@@ -157,16 +156,17 @@ function paginationPageUrl($pageNumber) {
 </style>
 </head>
 <body>
+    <?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-money-bill-wave"></i> Sold Monitors</h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Sold Monitors</span>
@@ -196,7 +196,7 @@ function paginationPageUrl($pageNumber) {
         <?php endif; ?>
         <div class="filter-group">
             <button type="submit" class="btn"><i class="fas fa-search"></i> Search</button>
-            <a href="sold_monitors.php" class="btn btn-secondary" style="background:var(--gray-500); margin-left:0.5rem;">Reset</a>
+            <a href="sold_monitors" class="btn btn-secondary" style="background:var(--gray-500); margin-left:0.5rem;">Reset</a>
         </div>
     </form>
 
@@ -228,7 +228,7 @@ function paginationPageUrl($pageNumber) {
                             <td><?= htmlspecialchars($m['added_by']) ?></td>
                             <td><?= htmlspecialchars($m['sold_by'] ?? '-') ?></td>
                             <td><?= date('M j, Y H:i', strtotime($m['sold_at'])) ?></td>
-                            <td><a href="view_monitor.php?sn=<?= urlencode($m['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                            <td><a href="view_monitor?sn=<?= urlencode($m['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>

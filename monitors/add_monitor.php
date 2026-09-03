@@ -178,14 +178,14 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         <h1><i class="fas fa-desktop"></i> Add Monitor</h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="monitors_instock.php">Monitors</a>
+            <a href="monitors_instock">Monitors</a>
             <span> / </span>
             <span>Add Monitor</span>
         </div>

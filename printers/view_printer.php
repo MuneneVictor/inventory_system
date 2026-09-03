@@ -114,14 +114,14 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         <h1><i class="fas fa-print"></i> Printer Details <span class="serial-code"><?= htmlspecialchars($printer['serial_number']) ?></span></h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="printers_instock.php">In‑Stock Printers</a>
+            <a href="printers_instock">In‑Stock Printers</a>
             <span> / </span>
             <span>View Printer</span>
         </div>
@@ -150,9 +150,9 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     </div>
 
     <div class="action-buttons">
-        <a href="printers_instock.php" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Inventory</a>
+        <a href="printers_instock" class="btn btn-secondary"><i class="fas fa-arrow-left"></i> Back to Inventory</a>
         <?php if ($user_role === 'super_admin' || $user_role === 'inventory_admin'): ?>
-            <a href="edit_printer.php?sn=<?= urlencode($printer['serial_number']) ?>" class="btn"><i class="fas fa-edit"></i> Edit Printer</a>
+            <a href="edit_printer?sn=<?= urlencode($printer['serial_number']) ?>" class="btn"><i class="fas fa-edit"></i> Edit Printer</a>
         <?php endif; ?>
     </div>
 

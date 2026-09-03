@@ -330,9 +330,9 @@ $conditions = ['Ex-Uk', 'New', 'Refurbished'];
         <h1><i class="fas fa-dollar-sign"></i> Monitor Price List</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Monitor Price List</span>
@@ -408,12 +408,12 @@ $conditions = ['Ex-Uk', 'New', 'Refurbished'];
                                 <td>
                                     <?php if ($g['price'] === null): ?>
                                         <a class="btn btn-add" 
-                                           href="add_price_monitor_group.php?model=<?= urlencode($g['model_name']) ?>&size=<?= (int)$g['size_inches'] ?>&condition=<?= urlencode($g['monitor_condition'] ?? '') ?>">
+                                           href="add_price_monitor_group?model=<?= urlencode($g['model_name']) ?>&size=<?= (int)$g['size_inches'] ?>&condition=<?= urlencode($g['monitor_condition'] ?? '') ?>">
                                             <i class="fas fa-plus"></i> Add Price
                                         </a>
                                     <?php else: ?>
                                         <a class="btn btn-primary" 
-                                           href="update_price_monitor_group.php?model=<?= urlencode($g['model_name']) ?>&size=<?= (int)$g['size_inches'] ?>&condition=<?= urlencode($g['monitor_condition'] ?? '') ?>&price=<?= $g['price'] ?>">
+                                           href="update_price_monitor_group?model=<?= urlencode($g['model_name']) ?>&size=<?= (int)$g['size_inches'] ?>&condition=<?= urlencode($g['monitor_condition'] ?? '') ?>&price=<?= $g['price'] ?>">
                                             <i class="fas fa-edit"></i> Update Price
                                         </a>
                                     <?php endif; ?>

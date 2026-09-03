@@ -8,7 +8,7 @@ if (empty($_SESSION['csrf_token'])) {
 
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
-require_once "../includes/header.php";
+
 
 $role = $_SESSION['role'] ?? '';
 if ($role !== 'super_admin') {
@@ -147,7 +147,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $settings = loadLoginSettings($conn, $defaults);
 $blocked = array_filter(array_map('trim', explode(',', strtolower((string)$settings['blocked_days']))));
 
-require_once "../includes/sidebar.php";
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -206,6 +205,7 @@ require_once "../includes/sidebar.php";
     </style>
 </head>
 <body>
+    <?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-user-clock"></i> Login Access Settings</h1>

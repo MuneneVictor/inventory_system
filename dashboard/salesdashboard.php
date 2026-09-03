@@ -723,7 +723,7 @@ $myTodayRevenueJS = $myTodayRevenue;
             <img src="../assets/MC-LOGO.png" alt="Mombasa Computers" onerror="this.style.display='none'">
         </div>
         <div>
-            <a href="../dashboard/salesdashboard.php" class="link-btn">
+            <a href="../dashboard/salesdashboard" class="link-btn">
                 <i class="fas fa-sync-alt"></i> Refresh
             </a>
         </div>

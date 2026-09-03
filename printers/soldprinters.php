@@ -161,11 +161,11 @@ function paginationPageUrl($pageNumber) {
         <h1><i class="fas fa-money-bill-wave"></i> Sold Printers</h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Sold Printers</span>
@@ -195,7 +195,7 @@ function paginationPageUrl($pageNumber) {
         <?php endif; ?>
         <div class="filter-group">
             <button type="submit" class="btn"><i class="fas fa-search"></i> Search</button>
-            <a href="sold_printers.php" class="btn btn-secondary" style="background:var(--gray-500); margin-left:0.5rem;">Reset</a>
+            <a href="sold_printers" class="btn btn-secondary" style="background:var(--gray-500); margin-left:0.5rem;">Reset</a>
         </div>
     </form>
 
@@ -225,7 +225,7 @@ function paginationPageUrl($pageNumber) {
                             <td><?= htmlspecialchars($p['added_by']) ?></td>
                             <td><?= htmlspecialchars($p['sold_by'] ?? '-') ?></td>
                             <td><?= date('M j, Y H:i', strtotime($p['date_sold'])) ?></td>
-                            <td><a href="view_printer.php?sn=<?= urlencode($p['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                            <td><a href="view_printer?sn=<?= urlencode($p['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>

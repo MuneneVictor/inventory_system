@@ -473,14 +473,14 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         <h1><i class="fas fa-microchip"></i> Add RAM/SSD</h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="rams_instocks.php">RAM/SSD Stock</a>
+            <a href="rams_instocks">RAM/SSD Stock</a>
             <span> / </span>
             <span>Add RAM/SSD</span>
         </div>
@@ -558,7 +558,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     <div id="checkFeedback" class="check-feedback"></div>
 
                     <div class="form-actions">
-                        <a href="rams_instocks.php" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>
+                        <a href="rams_instocks" class="btn btn-secondary"><i class="fas fa-times"></i> Cancel</a>
                         <button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Add / Update</button>
                     </div>
                 </form>

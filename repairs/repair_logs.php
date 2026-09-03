@@ -378,13 +378,13 @@ function paginationPageUrl($pageNumber) {
         <h1><i class="fas fa-history"></i> Repair Logs</h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php elseif ($user_role === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/techniciandashboard.php">Dashboard</a>
+                <a href="../dashboard/techniciandashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Repair Logs</span>
@@ -489,9 +489,9 @@ function paginationPageUrl($pageNumber) {
             <div class="filter-group">
                 <div class="filter-actions">
                     <button type="submit" class="btn"><i class="fas fa-search"></i> Filter</button>
-                    <a href="repair_logs.php" class="btn btn-secondary">Reset</a>
+                    <a href="repair_logs" class="btn btn-secondary">Reset</a>
                     <?php if (!empty($repairs)): ?>
-                        <a href="export_repair_logs.php?<?= $query_string ?>" class="btn btn-export">
+                        <a href="export_repair_logs?<?= $query_string ?>" class="btn btn-export">
                             <i class="fas fa-file-excel"></i> Export Excel
                         </a>
                     <?php endif; ?>
@@ -507,7 +507,7 @@ function paginationPageUrl($pageNumber) {
                 <i class="fas fa-clipboard-list"></i>
                 <p>No repair logs found.</p>
                 <p style="font-size:0.85rem; margin-top:0.5rem; color:var(--gray-400);">
-                    <a href="add_repair.php" style="color:var(--primary); text-decoration:none;">
+                    <a href="add_repair" style="color:var(--primary); text-decoration:none;">
                         <i class="fas fa-plus-circle"></i> Add a new repair
                     </a>
                 </p>
@@ -582,10 +582,10 @@ function paginationPageUrl($pageNumber) {
 
     <!-- Quick Action Buttons -->
     <div class="actions-row">
-        <a href="add_repair.php" class="link-btn"><i class="fas fa-plus-circle"></i> Add New Repair</a>
-        <a href="under_repair.php" class="link-btn link-btn-sm"><i class="fas fa-tools"></i> Under Repair</a>
-        <a href="repair_logs.php?status=fixed" class="link-btn link-btn-sm"><i class="fas fa-check-circle"></i> Fixed Only</a>
-        <a href="repair_logs.php?status=pending" class="link-btn link-btn-sm"><i class="fas fa-clock"></i> Pending Only</a>
+        <a href="add_repair" class="link-btn"><i class="fas fa-plus-circle"></i> Add New Repair</a>
+        <a href="under_repair" class="link-btn link-btn-sm"><i class="fas fa-tools"></i> Under Repair</a>
+        <a href="repair_logs?status=fixed" class="link-btn link-btn-sm"><i class="fas fa-check-circle"></i> Fixed Only</a>
+        <a href="repair_logs?status=pending" class="link-btn link-btn-sm"><i class="fas fa-clock"></i> Pending Only</a>
     </div>
 
     <?php if ($__total_rows > 0): ?>

@@ -3,6 +3,12 @@ session_start();
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
 
+$role = $_SESSION['role'] ?? '';
+if (!in_array($role, ['super_admin', 'manager', 'inventory_admin'])) {
+   die("Access denied. You do not have permission to view this page.");
+    exit;
+}
+
 // Fetch inventory items efficiently using SQL-side filtering and pagination.
 function buildInventoryUnion($filters, &$params) {
     $sources = [
@@ -465,15 +471,13 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         <h1><i class="fas fa-list-ul"></i> Inventory Overview</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'sales'): ?>
-                <a href="../dashboard/salesdashboard.php">Dashboard</a>
-            <?php else: ?>
-                <a href="../index.php">Home</a>
+                <a href="../dashboard/salesdashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Overview</span>
@@ -543,9 +547,9 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
             </div>
             <div class="filter-actions">
                 <button type="submit" class="btn"><i class="fas fa-search"></i> Filter</button>
-                <a href="overview.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="overview" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($inventoryItems)): ?>
-                    <a href="export_inventory_excel.php?<?= http_build_query(array_merge(array_diff_key($_GET, ['page' => true, 'per_page' => true]), ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
+                    <a href="export_inventory_excel?<?= http_build_query(array_merge(array_diff_key($_GET, ['page' => true, 'per_page' => true]), ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
             </div>
         </form>

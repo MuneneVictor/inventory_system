@@ -269,13 +269,13 @@ $hasFilters = !empty($search_model) || !empty($search_category) || !empty($searc
         <h1><i class="fas fa-search"></i> Search Device</h1>
         <div class="breadcrumb">
             <?php if ($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif ($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php elseif ($user_role === 'inventory_admin'): ?>
-                <a href="../dashboard/inventorydashboard.php">Dashboard</a>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/techniciandashboard.php">Dashboard</a>
+                <a href="../dashboard/techniciandashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Search Device</span>
@@ -358,7 +358,7 @@ $hasFilters = !empty($search_model) || !empty($search_category) || !empty($searc
                         <i class="fas fa-search"></i> Search
                     </button>
                     <?php if ($hasFilters || !empty($search_sn)): ?>
-                        <a href="search_device.php" class="btn btn-secondary">
+                        <a href="search_device" class="btn btn-secondary">
                             <i class="fas fa-undo"></i> Reset
                         </a>
                     <?php endif; ?>
@@ -416,7 +416,7 @@ $hasFilters = !empty($search_model) || !empty($search_category) || !empty($searc
                     </span>
                 <?php endif; ?>
 
-                <a href="search_device.php" class="filter-tag" style="background:#fee2e2; border-color:#fecaca; color:#991b1b;">
+                <a href="search_device" class="filter-tag" style="background:#fee2e2; border-color:#fecaca; color:#991b1b;">
                     <i class="fas fa-undo"></i> Clear All
                 </a>
             </div>
@@ -431,7 +431,7 @@ $hasFilters = !empty($search_model) || !empty($search_category) || !empty($searc
                     <i class="fas fa-box-open"></i>
                     <p>No device found with serial number: <strong><?= safe($search_sn) ?></strong></p>
                     <p style="font-size:0.85rem; margin-top:0.5rem; color:var(--gray-400);">
-                        <a href="add_repair.php?sn=<?= urlencode($search_sn) ?>" style="color:var(--primary); text-decoration:none;">
+                        <a href="add_repair?sn=<?= urlencode($search_sn) ?>" style="color:var(--primary); text-decoration:none;">
                             <i class="fas fa-plus-circle"></i> Add this device to repair?
                         </a>
                     </p>
@@ -508,14 +508,14 @@ $hasFilters = !empty($search_model) || !empty($search_category) || !empty($searc
 
                 <!-- Quick Actions -->
                 <div style="margin-top:1.5rem; display:flex; gap:0.75rem; flex-wrap:wrap; padding-top:1rem; border-top:1px solid var(--gray-200);">
-                    <a href="add_repair.php?mode=instock&sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-primary btn-sm">
+                    <a href="add_repair?mode=instock&sn=<?= urlencode($device['serial_number']) ?>" class="btn btn-primary btn-sm">
                         <i class="fas fa-tools"></i> Add to Repair
                     </a>
-                    <a href="view_device.php?serial=<?= urlencode($device['serial_number']) ?>" class="btn btn-secondary btn-sm">
+                    <a href="view_device?serial=<?= urlencode($device['serial_number']) ?>" class="btn btn-secondary btn-sm">
                         <i class="fas fa-eye"></i> View Full Details
                     </a>
                     <?php if ($device['status'] === 'In Stock'): ?>
-                        <a href="sell_device.php?sale_id=&serial=<?= urlencode($device['serial_number']) ?>" class="btn btn-success btn-sm">
+                        <a href="sell_device?sale_id=&serial=<?= urlencode($device['serial_number']) ?>" class="btn btn-success btn-sm">
                             <i class="fas fa-money-bill-wave"></i> Sell Device
                         </a>
                     <?php endif; ?>
@@ -535,7 +535,7 @@ $hasFilters = !empty($search_model) || !empty($search_category) || !empty($searc
                         <i class="fas fa-clipboard-list"></i>
                         <p>No repair records for this device.</p>
                         <p style="font-size:0.85rem; margin-top:0.5rem; color:var(--gray-400);">
-                            <a href="add_repair.php?mode=instock&sn=<?= urlencode($device['serial_number']) ?>" style="color:var(--primary); text-decoration:none;">
+                            <a href="add_repair?mode=instock&sn=<?= urlencode($device['serial_number']) ?>" style="color:var(--primary); text-decoration:none;">
                                 <i class="fas fa-plus-circle"></i> Add first repair
                             </a>
                         </p>
@@ -630,11 +630,11 @@ $hasFilters = !empty($search_model) || !empty($search_category) || !empty($searc
                                 </td>
                                 <td><span class="badge"><?= safe($d['branch']) ?></span></td>
                                 <td>
-                                    <a href="search_device.php?serial=<?= urlencode($d['serial_number']) ?>" class="btn btn-primary btn-sm">
+                                    <a href="search_device?serial=<?= urlencode($d['serial_number']) ?>" class="btn btn-primary btn-sm">
                                         <i class="fas fa-eye"></i> View
                                     </a>
                                     <?php if ($d['status'] === 'In Stock'): ?>
-                                        <a href="add_repair.php?mode=instock&sn=<?= urlencode($d['serial_number']) ?>" class="btn btn-success btn-sm">
+                                        <a href="add_repair?mode=instock&sn=<?= urlencode($d['serial_number']) ?>" class="btn btn-success btn-sm">
                                             <i class="fas fa-tools"></i> Repair
                                         </a>
                                     <?php endif; ?>

@@ -116,7 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'details' => "Updated price from KES $current_price to KES $new_price for monitor group: $model ($size inch" . ($condition ? ", $condition" : "") . ") – $affected monitors updated"
         ]);
 
-        header("Location: price_list_monitors.php");
+        header("Location: price_list_monitors");
         exit();
     }
 }
@@ -368,12 +368,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <h1><i class="fas fa-edit"></i> Update Monitor Group Price</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="price_list_monitors.php">Monitor Price List</a>
+            <a href="price_list_monitors">Monitor Price List</a>
             <span> / </span>
             <span>Update Price</span>
         </div>

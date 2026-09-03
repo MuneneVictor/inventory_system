@@ -5,7 +5,7 @@ require_once "../includes/auth_check.php";
 
 $user_id = $_SESSION['user_id'] ?? 0;
 if (!isset($user_id)) {
-    header("Location: ../login.php");
+    header("Location: ../login");
     exit();
 }
 // Strict super_admin check
@@ -337,7 +337,7 @@ $reset_date_to = date('Y-m-t', strtotime($default_from));
     <div class="page-header">
         <h1><i class="fas fa-users"></i> Sales Team Report</h1>
         <div class="breadcrumb">
-            <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+            <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <span> / </span>
             <span>Sales Team</span>
         </div>
@@ -459,7 +459,7 @@ $reset_date_to = date('Y-m-t', strtotime($default_from));
 
     <!-- Back to Dashboard -->
     <div style="margin-top:1.5rem; display:flex; gap:0.75rem; flex-wrap:wrap;">
-        <a href="../dashboard/superadmindashboard.php" class="btn btn-primary"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
+        <a href="../dashboard/superadmindashboard" class="btn btn-primary"><i class="fas fa-arrow-left"></i> Back to Dashboard</a>
     </div>
 
     <div class="footer">

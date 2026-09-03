@@ -143,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['return_ram_ssd'])) {
 
                 // Clear output buffer and redirect
                 ob_end_clean();
-                header("Location: ram_ssd_logs.php?success=1");
+                header("Location: ram_ssd_logs?success=1");
                 exit;
 
             } catch (Exception $e) {
@@ -159,9 +159,7 @@ if (isset($_GET['success'])) {
     $return_success = "RAM/SSD returned successfully!";
 }
 
-// Now include header and sidebar (after all processing)
-require_once "../includes/header.php";
-require_once "../includes/sidebar.php";
+
 
 // Get filter inputs
 $filter_branch = trim($_GET['branch'] ?? '');
@@ -613,17 +611,17 @@ function paginationPageUrl($pageNumber) {
 </style>
 </head>
 <body>
-
+<?php include "../includes/sidebar.php"; ?>
 <div class="main-content">
     <div class="page-header">
         <h1><i class="fas fa-history"></i> RAM/SSD Logs</h1>
         <div class="breadcrumb">
             <?php if ($role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard/inventorydashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/inventorydashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>RAM/SSD Logs</span>
@@ -701,7 +699,7 @@ function paginationPageUrl($pageNumber) {
             </div>
             <div class="search-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="ram_ssd_logs.php" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="ram_ssd_logs" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
             </div>
         </form>
     </div>
@@ -713,7 +711,7 @@ function paginationPageUrl($pageNumber) {
                 <div class="empty-state">
                     <i class="fas fa-history"></i>
                     <p>No RAM/SSD logs found matching your criteria.</p>
-                    <a href="ram_ssd_logs.php" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="ram_ssd_logs" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>

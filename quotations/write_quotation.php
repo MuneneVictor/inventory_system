@@ -26,7 +26,7 @@ function generateQuotationNumber($conn) {
 // Handle reset
 if (isset($_GET['reset']) && $_GET['reset'] == '1') {
     unset($_SESSION['quotation_id']);
-    header("Location: write_quotation.php");
+    header("Location: write_quotation");
     exit;
 }
 
@@ -75,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['create_quotation'])) 
             $quotation_id = $conn->lastInsertId();
             
             $_SESSION['quotation_id'] = $quotation_id;
-            header("Location: add_quotation_items.php");
+            header("Location: add_quotation_items");
             exit;
         } catch (Exception $e) {
             $error = "Database error: " . $e->getMessage();
@@ -90,7 +90,7 @@ if ($quotation_id > 0) {
     $stmt->execute([$quotation_id, $user_id]);
     $quotation = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($quotation) {
-        header("Location: add_quotation_items.php");
+        header("Location: add_quotation_items");
         exit;
     } else {
         unset($_SESSION['quotation_id']);
@@ -162,16 +162,16 @@ $activeQuotations = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <h1><i class="fas fa-file-invoice"></i> Write Quotation</h1>
         <div class="breadcrumb">
             <?php if($user_role === 'sales'): ?>
-                <a href="../dashboard/salesdashboard.php">Dashboard</a> /
+                <a href="../dashboard/salesdashboard">Dashboard</a> /
             <?php endif; ?>
             <?php if($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php">Dashboard</a> /
+                <a href="../dashboard/superadmindashboard">Dashboard</a> /
             <?php endif; ?>
             <?php if($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php">Dashboard</a> /
+                <a href="../dashboard/managerdashboard">Dashboard</a> /
             <?php endif; ?>
             <?php if($user_role === 'technician'): ?>
-                <a href="../dashboard/techniciandashboard.php">Dashboard</a> /
+                <a href="../dashboard/techniciandashboard">Dashboard</a> /
             <?php endif; ?> Write Quotation
         </div>
     </div>
@@ -220,7 +220,7 @@ $activeQuotations = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                 <td><?= htmlspecialchars($q['client_phone'] ?? '—') ?></td>
                                 <td><?= date('M j, Y', strtotime($q['created_at'])) ?></td>
                                 <td style="text-align:right;">
-                                    <a href="add_quotation_items.php?quotation_id=<?= $q['id'] ?>" class="btn btn-sm">
+                                    <a href="add_quotation_items?quotation_id=<?= $q['id'] ?>" class="btn btn-sm">
                                         <i class="fas fa-arrow-right"></i> Continue
                                     </a>
                                 </td>

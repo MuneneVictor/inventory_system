@@ -176,15 +176,15 @@ $quotations = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <h1><i class="fas fa-file-invoice"></i> My Quotations</h1>
         <div class="breadcrumb">
             <?php if($user_role === 'sales'): ?>
-                <a href="../dashboard/salesdashboard"">Dashboard</a>
+                <a href="../dashboard/salesdashboard">Dashboard</a>
             <?php elseif($user_role === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard"">Dashboard</a>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
             <?php elseif($user_role === 'manager'): ?>
-                <a href="../dashboard/managerdashboard"">Dashboard</a>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
             <?php elseif($user_role === 'technician'): ?>
-                <a href="../dashboard/techniciandashboard"">Dashboard</a>
+                <a href="../dashboard/techniciandashboard">Dashboard</a>
             <?php else: ?>
-                <a href="../dashboard"">Dashboard</a>
+                <a href="../dashboard">Dashboard</a>
             <?php endif; ?>
             <span> / </span>
             <span>Quotations</span>
@@ -249,8 +249,8 @@ $quotations = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </div>
             <div class="filter-actions">
                 <button type="submit" class="btn"><i class="fas fa-search"></i> Filter</button>
-                <a href="quotations_list"" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
-                <a href="write_quotation"" class="btn btn-success"><i class="fas fa-plus"></i> New Quotation</a>
+                <a href="quotations_list" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="write_quotation" class="btn btn-success"><i class="fas fa-plus"></i> New Quotation</a>
             </div>
         </form>
     </div>
@@ -260,7 +260,7 @@ $quotations = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div class="empty-state">
                 <i class="fas fa-file-invoice" style="font-size:2rem; display:block; margin-bottom:1rem; color:#d1d5db;"></i>
                 <p>No quotations found.</p>
-                <a href="write_quotation"" class="btn btn-success" style="margin-top:1rem;">Create First Quotation</a>
+                <a href="write_quotation" class="btn btn-success" style="margin-top:1rem;">Create First Quotation</a>
             </div>
         <?php else: ?>
             <table>

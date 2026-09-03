@@ -113,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'details' => "Updated price from KES $current_price to KES $new_price for printer group: $model" . ($condition ? " ($condition)" : "") . " – $affected printers updated"
         ]);
 
-        header("Location: price_list_printers.php");
+        header("Location: price_list_printers");
         exit();
     }
 }
@@ -364,12 +364,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <h1><i class="fas fa-edit"></i> Update Printer Group Price</h1>
         <div class="breadcrumb">
             <?php if ($_SESSION['role'] === 'super_admin'): ?>
-                <a href="../dashboard/superadmindashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/superadmindashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php elseif ($_SESSION['role'] === 'manager'): ?>
-                <a href="../dashboard/managerdashboard.php"><i class="fas fa-home"></i> Dashboard</a>
+                <a href="../dashboard/managerdashboard"><i class="fas fa-home"></i> Dashboard</a>
             <?php endif; ?>
             <span> / </span>
-            <a href="price_list_printers.php">Printer Price List</a>
+            <a href="price_list_printers">Printer Price List</a>
             <span> / </span>
             <span>Update Price</span>
         </div>
