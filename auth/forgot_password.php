@@ -104,6 +104,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     }
 }
+require_once "../includes/header.php";
 ?>
 <!DOCTYPE html>
 <html lang="en">
