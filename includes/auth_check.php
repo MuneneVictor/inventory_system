@@ -23,7 +23,7 @@ $current_url = $_SERVER['REQUEST_URI'];
 if (!isset($_SESSION['user_id'])) {
     // Store the current URL before redirecting
     $_SESSION['redirect_after_login'] = $current_url;
-    header("Location: ../auth/login.php");
+    header("Location: ../auth/login");
     exit();
 }
 
@@ -57,7 +57,7 @@ if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > 
     session_start();
     $_SESSION['redirect_after_login'] = $redirect_url;
     $_SESSION['show_expired_popup'] = true;
-    header("Location: ../auth/login.php?expired=1");
+    header("Location: ../auth/login?expired=1");
     exit();
 }
 
@@ -79,10 +79,29 @@ $stmt = $conn->prepare("SELECT id, role, full_name, is_active, branch FROM users
 $stmt->execute([$user_id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$user || $user['is_active'] != 1) {
-    // User no longer exists or is inactive
+$isImpersonating = isset($_SESSION['impersonator']) && is_array($_SESSION['impersonator']);
+
+// During a Super Admin account check, independently verify that the original
+// administrator still exists, is active, and is still a Super Admin.
+if ($isImpersonating) {
+    $impersonatorId = (int)($_SESSION['impersonator']['user_id'] ?? 0);
+    $adminStmt = $conn->prepare("SELECT id, role, is_active FROM users WHERE id = ? LIMIT 1");
+    $adminStmt->execute([$impersonatorId]);
+    $impersonatorUser = $adminStmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$impersonatorUser || $impersonatorUser['role'] !== 'super_admin' || (int)$impersonatorUser['is_active'] !== 1) {
+        $_SESSION = [];
+        session_destroy();
+        header("Location: ../auth/login");
+        exit();
+    }
+}
+
+if (!$user || (!$isImpersonating && $user['is_active'] != 1)) {
+    // User no longer exists or is inactive. Inactive accounts may only be
+    // inspected inside a validated Super Admin account-check session.
     session_destroy();
-    header("Location: ../auth/login.php");
+    header("Location: ../auth/login");
     exit();
 }
 
@@ -180,7 +199,9 @@ function checkCurrentSessionLoginAccessPolicy(PDO $conn, array $user): array {
     return ['allowed' => true, 'message' => ''];
 }
 
-$accessPolicy = checkCurrentSessionLoginAccessPolicy($conn, $user);
+$accessPolicy = $isImpersonating
+    ? ['allowed' => true, 'message' => '']
+    : checkCurrentSessionLoginAccessPolicy($conn, $user);
 
 if (!$accessPolicy['allowed']) {
     $restrictedMessage = $accessPolicy['message'];
@@ -209,7 +230,7 @@ if (!$accessPolicy['allowed']) {
     session_start();
     $_SESSION['access_restricted_message'] = $restrictedMessage;
 
-    header("Location: ../auth/login.php?restricted=1");
+    header("Location: ../auth/login?restricted=1");
     exit();
 }
 
@@ -260,7 +281,7 @@ if ($_SESSION['login_ip'] !== $current_ip && !empty($_SESSION['login_ip']) && !e
     
     // Optional: Force logout on IP change (enable for high security)
     // session_destroy();
-    // header("Location: ../auth/login.php");
+    // header("Location: ../auth/login");
     // exit();
 }
 

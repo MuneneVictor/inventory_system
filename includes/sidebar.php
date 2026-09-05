@@ -44,6 +44,19 @@ $allowedEmails = [
         <div class="sidebar-menu">
             <?php $role = $_SESSION['role']; ?>
 
+            <?php if (!empty($_SESSION['impersonator']) && is_array($_SESSION['impersonator'])): ?>
+                <div style="margin:0 10px 14px;padding:12px;border-radius:8px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;font-size:12px;line-height:1.45;">
+                    <div style="font-weight:700;margin-bottom:7px;"><i class="fas fa-user-secret"></i> CHECKING USER ACCOUNT</div>
+                    <div style="margin-bottom:8px;">Viewing as <strong><?= htmlspecialchars($_SESSION['name'] ?? 'User') ?></strong> (<?= htmlspecialchars($_SESSION['role'] ?? '') ?>)</div>
+                    <form method="POST" action="../auth/exit_user_account" style="margin:0;">
+                        <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token'] ?? '') ?>">
+                        <button type="submit" style="width:100%;border:0;display:flex;align-items:center;justify-content:center;gap:6px;padding:7px 9px;border-radius:6px;background:#9a3412;color:#fff;font:inherit;cursor:pointer;font-weight:600;">
+                            <i class="fas fa-arrow-left"></i> Return to Super Admin
+                        </button>
+                    </form>
+                </div>
+            <?php endif; ?>
+
             <!-- My Profile (always visible) -->
             <a href="../auth/myaccount" class="menu-item">
                 <i class="fas fa-user"></i> MY PROFILE

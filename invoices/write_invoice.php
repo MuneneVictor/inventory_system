@@ -173,7 +173,18 @@ try {
     <div class="page-header">
         <h1><i class="fas fa-file-invoice"></i> Write Invoice</h1>
         <div class="breadcrumb">
-            <a href="../dashboard.php">Dashboard</a> / Write Invoice
+             <?php if($user_role === 'sales'): ?>
+                <a href="../dashboard/salesdashboard">Dashboard</a> /
+            <?php endif; ?>
+            <?php if($user_role === 'super_admin'): ?>
+                <a href="../dashboard/superadmindashboard">Dashboard</a> /
+            <?php endif; ?>
+            <?php if($user_role === 'manager'): ?>
+                <a href="../dashboard/managerdashboard">Dashboard</a> /
+            <?php endif; ?>
+            <?php if($user_role === 'technician'): ?>
+                <a href="../dashboard/techniciandashboard">Dashboard</a> 
+            <?php endif; ?> / Write Invoice
         </div>
     </div>
 

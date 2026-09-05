@@ -38,12 +38,11 @@ $page = max(1, (int)($_GET['page'] ?? 1));
 
 // Build query with all filters – FIX: use COALESCE for model and category
 $sql = "SELECT r.*, 
-               COALESCE(d.model_name, r.model_name) AS model_name,
+               COALESCE(d.model_name, r.model_name) AS display_model_name,
                c.category_name,
                d.processor, d.ram, d.storage_type, d.storage_capacity, d.touch, d.graphics,
                u1.full_name AS added_by_name,
-               u2.full_name AS given_by_name,
-               r.source_device
+               u2.full_name AS given_by_name
         FROM repairs r
         LEFT JOIN devices d ON r.serial_number COLLATE utf8mb4_general_ci = d.serial_number
         LEFT JOIN categories c ON COALESCE(d.category_id, r.category_id) = c.id
@@ -537,7 +536,7 @@ function paginationPageUrl($pageNumber) {
                         <td><?= $i++ ?></td>
                         <td><code><?= safe($r['serial_number'] ?? '') ?></code></td>
                         <td><span class="badge"><?= safe($r['category_name'] ?? 'N/A') ?></span></td>
-                        <td><?= safe($r['model_name'] ?? 'N/A') ?></td>
+                        <td><?= safe($r['display_model_name'] ?? $r['model_name'] ?? 'N/A') ?></td>
                         <td>
                             <?php 
                             $sourceInfo = getSourceDisplay($r['source_device'] ?? '');

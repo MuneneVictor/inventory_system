@@ -643,9 +643,17 @@ unset($_SESSION['success'], $_SESSION['error']);
         }
 
         .action-buttons {
-            display: flex;
+            display: grid;
+            grid-template-columns: repeat(2, minmax(105px, 1fr));
             gap: 0.5rem;
-            flex-wrap: wrap;
+            align-items: stretch;
+            min-width: 225px;
+        }
+
+        .action-buttons .btn {
+            width: 100%;
+            justify-content: center;
+            margin: 0;
         }
 
         .empty-state {
@@ -1003,10 +1011,17 @@ unset($_SESSION['success'], $_SESSION['error']);
                             </td>
                             <td>
                                 <div class="action-buttons">
-                                    <a href="edit_user?id=<?= $u['id'] ?>" class="btn btn-secondary btn-sm">
+                                    <a href="edit_user?id=<?= (int)$u['id'] ?>" class="btn btn-secondary btn-sm">
                                         <i class="fas fa-edit"></i> Edit
                                     </a>
                                     <?php if ($u['id'] != $_SESSION['user_id']): ?>
+                                        <form method="POST" action="check_user_account" target="_blank" style="margin:0;">
+                                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['csrf_token']) ?>">
+                                            <input type="hidden" name="user_id" value="<?= (int)$u['id'] ?>">
+                                            <button type="submit" class="btn btn-primary btn-sm" title="Open this account as the selected user">
+                                                <i class="fas fa-user-secret"></i> Check Account
+                                            </button>
+                                        </form>
                                         <?php if ($is_locked && $u['is_active'] == 1): ?>
                                             <button type="button" class="btn btn-warning btn-sm" onclick="unlockUser(<?= $u['id'] ?>, '<?= htmlspecialchars($u['full_name']) ?>')">
                                                 <i class="fas fa-unlock"></i> Unlock
@@ -1072,7 +1087,7 @@ function confirmReset(userId, userName) {
     if (confirm(`Are you sure you want to reset the password for "${userName}"?`)) {
         const form = document.createElement('form');
         form.method = 'POST';
-        form.action = 'reset_password.php';
+        form.action = 'reset_password';
         const csrfInput = document.createElement('input');
         csrfInput.type = 'hidden';
         csrfInput.name = 'csrf_token';

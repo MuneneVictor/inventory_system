@@ -20,7 +20,6 @@ $mode=trim((string)($_GET['report']??'overview'));if(!in_array($mode,['overview'
 $serial=trim((string)($_GET['serial']??''));$model=trim((string)($_GET['model']??''));$location=strtoupper(trim((string)($_GET['location']??'')));$status=trim((string)($_GET['status']??''));$df=trim((string)($_GET['date_from']??''));$dt=trim((string)($_GET['date_to']??''));
 $isSearch=($serial!==''||$model!=='');
 if($isSearch){$df='';$dt='';}
-else{if($df==='')$df=date('Y-m-01');if($dt==='')$dt=date('Y-m-d');}
 $sql="SELECT * FROM `$table` WHERE 1=1";$p=[];
 if($mode==='instock')$sql.=" AND status='In Stock'";elseif($mode==='sold')$sql.=" AND status='Sold'";elseif($status!==''){$sql.=' AND status=:s';$p['s']=$status;}
 if($serial!==''){$sql.=' AND serial_number LIKE :sn';$p['sn']=$serial."%";}if($model!==''){$sql.=' AND model_name LIKE :m';$p['m']=$model."%";}

@@ -145,6 +145,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_POST['update_sale_details'])){
         $salesPerson=trim((string)($_POST['sales_person']??''));
         $sellingPrice=(float)($_POST['selling_price']??0);
         $paymentStatus=strtolower(trim((string)($_POST['payment_status']??'')));
+        $notes=trim((string)($_POST['notes']??''));
 
         if($itemId<=0)throw new Exception('Invalid item.');
         if($salesPerson==='')throw new Exception('Please enter the sales person.');
@@ -160,9 +161,9 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_POST['update_sale_details'])){
         if(($item['status']??'')!=='In Stock')throw new Exception('Update Sale Details is only available for items that are currently In Stock.');
 
         $up=$conn->prepare("UPDATE `$table`
-                            SET status='Sold',sales_person=?,selling_price=?,payment_status=?,sold_at=NOW()
+                            SET status='Sold',sales_person=?,selling_price=?,payment_status=?,notes=?,sold_at=NOW()
                             WHERE id=?");
-        $up->execute([$salesPerson,$sellingPrice,$paymentStatus,$itemId]);
+        $up->execute([$salesPerson,$sellingPrice,$paymentStatus,$notes===''?null:$notes,$itemId]);
 
         $serialLabel=trim((string)($item['serial_number']??''))?:'#'.$itemId;
         try{
@@ -195,19 +196,14 @@ $perPage=(int)($_GET['per_page']??100);
 if(!in_array($perPage,$allowedPerPage,true))$perPage=100;
 $page=max(1,(int)($_GET['page']??1));
 
-$hasDateFrom=array_key_exists('date_from',$_GET);
-$hasDateTo=array_key_exists('date_to',$_GET);
 $date_from=trim((string)($_GET['date_from']??''));
 $date_to=trim((string)($_GET['date_to']??''));
 
 $isSearch=$serial!==''||$model!=='';
 if($isSearch){
-    // Serial/model searches intentionally ignore the month window and search the entire table.
+    // Serial/model searches intentionally ignore date filters and search the entire table.
     $date_from='';
     $date_to='';
-}else{
-    if(!$hasDateFrom||$date_from==='')$date_from=date('Y-m-01');
-    if(!$hasDateTo||$date_to==='')$date_to=date('Y-m-d');
 }
 
 $where=['1=1'];
@@ -346,7 +342,7 @@ $exportQuery=http_build_query(array_filter([
         <span> / </span><span><?=htmlspecialchars($pageTitle)?></span>
       </div>
       <div class="summary">
-        This page shows the current month's records by default. Search by Serial Number or Model to find records across the full inventory, including older items. Results are paginated to keep the system responsive as the inventory grows.
+        Date filters are optional and remain empty by default, so you can browse the full inventory using pagination or the Items Per Page selector. Search by Serial Number or Model to find records across the full inventory. Only the current page of records is loaded to keep the system responsive as the inventory grows.
       </div>
     </div>
     <div class="quick">
@@ -523,6 +519,7 @@ $isUndersold=$isRowSold
     <div class="g"><label>Sales Person</label><input name="sales_person" required placeholder="Type salesperson name"></div>
     <div class="g"><label>Selling Price (KES)</label><input type="number" step="0.01" min="0.01" name="selling_price" required></div>
     <div class="g"><label>Payment Status</label><select name="payment_status" required><option value="">-- Select --</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></div>
+     <div class="g"><label>Notes <span style="font-weight:400;color:var(--m)">(Optional)</span></label><textarea name="notes" rows="3" placeholder="Add sale notes if needed"></textarea></div>
     <div class="modal-actions"><button type="button" class="btn secondary" id="cancelModal">Cancel</button><button class="btn" type="submit">Save Sale Details</button></div>
    </form>
   </div>
