@@ -662,12 +662,14 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     <tr>
                         <th>#</th>
                         <th>Serial Number</th>
+                        <th>Cargo Number</th>
                         <th>Model</th>
                         <th>Category</th>
                         <th>Specifications</th>
                         <th>Place</th>
                         <th>Added By</th>
                         <th>Branch</th>
+                        <th>Location</th>
                         <th>Price (KES)</th>
                         <th>Action</th>
                     </tr>
@@ -684,6 +686,7 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <tr>
                             <td><?= $i++ ?></td>
                             <td><code><?= htmlspecialchars($device['serial_number']) ?></code></td>
+                            <td><?= htmlspecialchars($device['cargo_number'] ?? '-') ?></td>
                             <td><strong><?= htmlspecialchars($device['model_name'] ?? '-') ?></strong></td>
                             <td><?= htmlspecialchars($device['category_name'] ?? '-') ?></td>
                             <td>
@@ -698,6 +701,7 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             </td>
                             <td><?= htmlspecialchars($device['added_by_name'] ?? 'System') ?></td>
                             <td><?= htmlspecialchars($device['branch'] ?? '-') ?></td>
+                            <td><?= htmlspecialchars($device['location'] ?? '-') ?></td>
                             <td>
                                 <?= $device['price'] !== null ? number_format($device['price'], 2) : '—' ?>
                             </td>

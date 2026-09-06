@@ -338,6 +338,12 @@ $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
         }
         .btn-add:hover { background: #2563eb; }
 
+        .btn-reset {
+            background: var(--gray-200);
+            color: var(--gray-700);
+        }
+        .btn-reset:hover { background: var(--gray-300); }
+
         .empty-state {
             text-align: center;
             padding: 3rem;
@@ -473,6 +479,10 @@ $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div class="filter-group" style="justify-content:flex-end">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
             </div>
+
+            <div class="filter-group" style="justify-content:flex-end">
+                <a href="price_list.php" class="btn btn-reset"><i class="fas fa-rotate-left"></i> Reset</a>
+            </div>
         </form>
     </div>
 
@@ -506,7 +516,7 @@ $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <td><strong><?= htmlspecialchars($d['cargo_number']) ?></strong></td>
                             <td><span class="badge"><?= htmlspecialchars($d['category_name']) ?></span></td>
                             <td class="wrap-model"><?= htmlspecialchars($d['model_name']) ?></td>
-                            <td class="wrap-processor"><?= htmlspecialchars($d['processor']) ?></td>
+                            <td class="wrap-processor"><?= !empty($d['processor']) ? htmlspecialchars($d['processor']) : '-' ?></td>
                             <td><span class="badge"><?= $d['ram'] ?> GB</span></td>
                             <td><span class="badge"><?= $d['storage_type'] . ' ' . $d['storage_capacity'] . 'GB' ?></span></td>
                             <td class="wrap-graphics"><?= htmlspecialchars($d['graphics']) ?></td>
@@ -519,12 +529,12 @@ $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             <td>
                                 <?php if($d['price'] === null): ?>
                                     <a class="btn btn-add" 
-                                       href="add_price?cargo=<?= urlencode($d['cargo_number']) ?>&category_id=<?= $d['category_id'] ?>&model=<?= urlencode($d['model_name']) ?>&processor=<?= urlencode($d['processor']) ?>&ram=<?= $d['ram'] ?>&storage_type=<?= urlencode($d['storage_type']) ?>&storage_capacity=<?= $d['storage_capacity'] ?>&graphics=<?= urlencode($d['graphics']) ?>&touch=<?= urlencode($d['touch']) ?>&device_condition=<?= urlencode($d['device_condition'] ?? 'Ex-Uk') ?>">
+                                       href="add_price.php?cargo=<?= urlencode((string)($d['cargo_number'] ?? '')) ?>&category_id=<?= $d['category_id'] ?>&model=<?= urlencode((string)($d['model_name'] ?? '')) ?>&processor=<?= urlencode((string)($d['processor'] ?? '')) ?>&ram=<?= rawurlencode((string)($d['ram'] ?? '')) ?>&storage_type=<?= urlencode((string)($d['storage_type'] ?? '')) ?>&storage_capacity=<?= rawurlencode((string)($d['storage_capacity'] ?? '')) ?>&graphics=<?= urlencode((string)($d['graphics'] ?? '')) ?>&touch=<?= urlencode((string)($d['touch'] ?? '')) ?>&device_condition=<?= urlencode((string)($d['device_condition'] ?? 'Ex-Uk')) ?>">
                                         <i class="fas fa-plus"></i> Add Price
                                     </a>
                                 <?php else: ?>
                                     <a class="btn btn-primary" 
-                                       href="update_price?cargo=<?= urlencode($d['cargo_number']) ?>&category_id=<?= $d['category_id'] ?>&model=<?= urlencode($d['model_name']) ?>&processor=<?= urlencode($d['processor']) ?>&ram=<?= $d['ram'] ?>&storage_type=<?= urlencode($d['storage_type']) ?>&storage_capacity=<?= $d['storage_capacity'] ?>&graphics=<?= urlencode($d['graphics']) ?>&touch=<?= urlencode($d['touch']) ?>&device_condition=<?= urlencode($d['device_condition'] ?? 'Ex-Uk') ?>">
+                                       href="update_price.php?cargo=<?= urlencode((string)($d['cargo_number'] ?? '')) ?>&category_id=<?= $d['category_id'] ?>&model=<?= urlencode((string)($d['model_name'] ?? '')) ?>&processor=<?= urlencode((string)($d['processor'] ?? '')) ?>&ram=<?= rawurlencode((string)($d['ram'] ?? '')) ?>&storage_type=<?= urlencode((string)($d['storage_type'] ?? '')) ?>&storage_capacity=<?= rawurlencode((string)($d['storage_capacity'] ?? '')) ?>&graphics=<?= urlencode((string)($d['graphics'] ?? '')) ?>&touch=<?= urlencode((string)($d['touch'] ?? '')) ?>&device_condition=<?= urlencode((string)($d['device_condition'] ?? 'Ex-Uk')) ?>">
                                         <i class="fas fa-edit"></i> Update Price
                                     </a>
                                 <?php endif; ?>

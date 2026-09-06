@@ -23,7 +23,7 @@ $current_url = $_SERVER['REQUEST_URI'];
 if (!isset($_SESSION['user_id'])) {
     // Store the current URL before redirecting
     $_SESSION['redirect_after_login'] = $current_url;
-    header("Location: ../auth/login");
+    header("Location: ../auth/login.php");
     exit();
 }
 
@@ -57,9 +57,14 @@ if (isset($_SESSION['last_activity']) && (time() - $_SESSION['last_activity'] > 
     session_start();
     $_SESSION['redirect_after_login'] = $redirect_url;
     $_SESSION['show_expired_popup'] = true;
-    header("Location: ../auth/login?expired=1");
+    header("Location: ../auth/login.php?expired=1");
     exit();
 }
+
+// ============================================================
+// UPDATE LAST ACTIVITY
+// ============================================================
+$_SESSION['last_activity'] = time();
 
 // ============================================================
 // REGENERATE SESSION ID PERIODICALLY (every 5 minutes)
@@ -79,166 +84,12 @@ $stmt = $conn->prepare("SELECT id, role, full_name, is_active, branch FROM users
 $stmt->execute([$user_id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-$isImpersonating = isset($_SESSION['impersonator']) && is_array($_SESSION['impersonator']);
-
-// During a Super Admin account check, independently verify that the original
-// administrator still exists, is active, and is still a Super Admin.
-if ($isImpersonating) {
-    $impersonatorId = (int)($_SESSION['impersonator']['user_id'] ?? 0);
-    $adminStmt = $conn->prepare("SELECT id, role, is_active FROM users WHERE id = ? LIMIT 1");
-    $adminStmt->execute([$impersonatorId]);
-    $impersonatorUser = $adminStmt->fetch(PDO::FETCH_ASSOC);
-
-    if (!$impersonatorUser || $impersonatorUser['role'] !== 'super_admin' || (int)$impersonatorUser['is_active'] !== 1) {
-        $_SESSION = [];
-        session_destroy();
-        header("Location: ../auth/login");
-        exit();
-    }
-}
-
-if (!$user || (!$isImpersonating && $user['is_active'] != 1)) {
-    // User no longer exists or is inactive. Inactive accounts may only be
-    // inspected inside a validated Super Admin account-check session.
+if (!$user || $user['is_active'] != 1) {
+    // User no longer exists or is inactive
     session_destroy();
-    header("Location: ../auth/login");
+    header("Location: ../auth/login.php");
     exit();
 }
-
-
-// ============================================================
-// ENFORCE CURRENT LOGIN ACCESS POLICY
-// This runs on every protected request.
-// Super Admin is always exempt.
-// ============================================================
-function checkCurrentSessionLoginAccessPolicy(PDO $conn, array $user): array {
-    if (($user['role'] ?? '') === 'super_admin') {
-        return ['allowed' => true, 'message' => ''];
-    }
-
-    try {
-        $settingsStmt = $conn->query(
-            "SELECT restrictions_enabled, blocked_days, enforce_working_hours,
-                    work_start_time, work_end_time, timezone,
-                    blocked_day_message, outside_hours_message
-             FROM login_access_settings
-             WHERE id = 1
-             LIMIT 1"
-        );
-        $settings = $settingsStmt->fetch(PDO::FETCH_ASSOC);
-    } catch (Throwable $e) {
-        // Fail open if the settings table is temporarily unavailable.
-        // This avoids accidentally locking every user out because of a DB/migration issue.
-        error_log('Auth access settings error: ' . $e->getMessage());
-        return ['allowed' => true, 'message' => ''];
-    }
-
-    if (!$settings || (int)$settings['restrictions_enabled'] !== 1) {
-        return ['allowed' => true, 'message' => ''];
-    }
-
-    $timezone = trim((string)($settings['timezone'] ?? 'Africa/Nairobi'));
-    if ($timezone === '') {
-        $timezone = 'Africa/Nairobi';
-    }
-
-    try {
-        $tz = new DateTimeZone($timezone);
-    } catch (Throwable $e) {
-        $tz = new DateTimeZone('Africa/Nairobi');
-    }
-
-    $now = new DateTimeImmutable('now', $tz);
-    $dayName = strtolower($now->format('l'));
-
-    $blockedDays = array_values(array_filter(array_map(
-        'trim',
-        explode(',', strtolower((string)($settings['blocked_days'] ?? '')))
-    )));
-
-    if (in_array($dayName, $blockedDays, true)) {
-        $customMessage = trim((string)($settings['blocked_day_message'] ?? ''));
-
-        return [
-            'allowed' => false,
-            'message' => $customMessage !== ''
-                ? $customMessage
-                : 'The system is not available today. Please log in on the next working day.'
-        ];
-    }
-
-    if ((int)$settings['enforce_working_hours'] === 1) {
-        $start = substr((string)($settings['work_start_time'] ?? ''), 0, 5);
-        $end   = substr((string)($settings['work_end_time'] ?? ''), 0, 5);
-        $current = $now->format('H:i');
-
-        $withinHours = true;
-
-        if ($start !== '' && $end !== '') {
-            if ($start <= $end) {
-                // Normal same-day window, e.g. 08:00 - 18:00
-                $withinHours = ($current >= $start && $current <= $end);
-            } else {
-                // Overnight window, e.g. 18:00 - 06:00
-                $withinHours = ($current >= $start || $current <= $end);
-            }
-        }
-
-        if (!$withinHours) {
-            $customMessage = trim((string)($settings['outside_hours_message'] ?? ''));
-
-            return [
-                'allowed' => false,
-                'message' => $customMessage !== ''
-                    ? $customMessage
-                    : "The system is only available between {$start} and {$end}."
-            ];
-        }
-    }
-
-    return ['allowed' => true, 'message' => ''];
-}
-
-$accessPolicy = $isImpersonating
-    ? ['allowed' => true, 'message' => '']
-    : checkCurrentSessionLoginAccessPolicy($conn, $user);
-
-if (!$accessPolicy['allowed']) {
-    $restrictedMessage = $accessPolicy['message'];
-
-    // Clear all authenticated session data.
-    $_SESSION = [];
-
-    // Expire the current PHP session cookie.
-    if (ini_get("session.use_cookies")) {
-        $params = session_get_cookie_params();
-        setcookie(
-            session_name(),
-            '',
-            time() - 42000,
-            $params["path"],
-            $params["domain"],
-            $params["secure"],
-            $params["httponly"]
-        );
-    }
-
-    session_destroy();
-
-    // Start a clean session so the login page can optionally display
-    // the reason the user was automatically logged out.
-    session_start();
-    $_SESSION['access_restricted_message'] = $restrictedMessage;
-
-    header("Location: ../auth/login?restricted=1");
-    exit();
-}
-
-// ============================================================
-// UPDATE LAST ACTIVITY
-// Only update after the live access-policy check passes.
-// ============================================================
-$_SESSION['last_activity'] = time();
 
 // ============================================================
 // STORE USER INFO FOR EASY ACCESS
@@ -246,6 +97,63 @@ $_SESSION['last_activity'] = time();
 $role = $user['role'];
 $user_name = $user['full_name'] ?? 'User';
 $user_branch = $user['branch'] ?? null;
+
+// ============================================================
+// CASHIER MODE - effective permissions without changing identity
+// ============================================================
+if (!empty($_SESSION['cashier_mode_active'])) {
+    $modeUserId = (int)($_SESSION['cashier_mode_user_id'] ?? 0);
+    $modeBranch = strtoupper(trim((string)($_SESSION['cashier_mode_branch'] ?? '')));
+    $validBranches = ['KIMATHI', 'MOI'];
+    $modeAuthorized = false;
+
+    // The mode must belong to the same authenticated user and a whitelisted branch.
+    if ($modeUserId === $user_id && in_array($modeBranch, $validBranches, true)) {
+        if (($user['role'] ?? '') === 'super_admin') {
+            $modeAuthorized = true;
+        } else {
+            try {
+                $emailStmt = $conn->prepare("SELECT email FROM users WHERE id = ? LIMIT 1");
+                $emailStmt->execute([$user_id]);
+                $currentEmail = strtolower(trim((string)($emailStmt->fetchColumn() ?: '')));
+
+                $settingStmt = $conn->query("SELECT owner_inventory_allowed_emails FROM login_access_settings WHERE id = 1 LIMIT 1");
+                $rawAllowed = (string)($settingStmt->fetchColumn() ?: '');
+                $allowedEmails = [];
+                foreach (preg_split('/[\s,;]+/', strtolower($rawAllowed)) ?: [] as $allowedEmail) {
+                    $allowedEmail = trim($allowedEmail);
+                    if ($allowedEmail !== '' && filter_var($allowedEmail, FILTER_VALIDATE_EMAIL)) {
+                        $allowedEmails[] = $allowedEmail;
+                    }
+                }
+                $modeAuthorized = $currentEmail !== '' && in_array($currentEmail, array_unique($allowedEmails), true);
+            } catch (Throwable $e) {
+                $modeAuthorized = false;
+            }
+        }
+    }
+
+    if (!$modeAuthorized) {
+        // Fail closed: silently restore the real DB-backed account role/branch.
+        unset(
+            $_SESSION['cashier_mode_active'],
+            $_SESSION['cashier_mode_user_id'],
+            $_SESSION['cashier_mode_original_role'],
+            $_SESSION['cashier_mode_original_branch'],
+            $_SESSION['cashier_mode_branch']
+        );
+        $_SESSION['role'] = (string)$user['role'];
+        $_SESSION['branch'] = (string)($user['branch'] ?? '');
+        session_regenerate_id(true);
+    } else {
+        // Identity remains the original user. Only effective authorization context changes.
+        $_SESSION['role'] = 'cashier';
+        $_SESSION['branch'] = $modeBranch;
+        $role = 'cashier';
+        $user_branch = $modeBranch;
+        $user['branch'] = $modeBranch;
+    }
+}
 
 // ============================================================
 // FUNCTION TO GET DEVICE FINGERPRINT (if needed)
@@ -281,7 +189,7 @@ if ($_SESSION['login_ip'] !== $current_ip && !empty($_SESSION['login_ip']) && !e
     
     // Optional: Force logout on IP change (enable for high security)
     // session_destroy();
-    // header("Location: ../auth/login");
+    // header("Location: ../auth/login.php");
     // exit();
 }
 

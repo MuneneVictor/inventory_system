@@ -40,9 +40,14 @@ if (!function_exists('ownerInventoryAccessContext')) {
             $allowedEmails = [];
         }
 
-        $hasAccess =
+        // Cashier Mode is intentionally restricted to cashier permissions only.
+        // An email that normally has owner-inventory access must not retain that
+        // elevated access while operating in Cashier Mode.
+        $isCashierMode = !empty($_SESSION['cashier_mode_active']);
+        $hasAccess = !$isCashierMode && (
             $role === 'super_admin' ||
-            ($email !== '' && in_array($email, $allowedEmails, true));
+            ($email !== '' && in_array($email, $allowedEmails, true))
+        );
 
         return [
             'role' => $role,

@@ -20,6 +20,35 @@ if (!$user) {
     die("User not found.");
 }
 
+// Cashier Mode eligibility: Super Admin always qualifies; other users must be
+// in the same Settings-managed email list used for Iman Inventory / Iman's Hustle.
+if (empty($_SESSION['cashier_mode_csrf'])) {
+    $_SESSION['cashier_mode_csrf'] = bin2hex(random_bytes(32));
+}
+
+$isCashierMode = !empty($_SESSION['cashier_mode_active']);
+$canSwitchToCashier = ($user['role'] === 'super_admin');
+
+if (!$canSwitchToCashier && !$isCashierMode) {
+    try {
+        $accessStmt = $conn->query("SELECT owner_inventory_allowed_emails FROM login_access_settings WHERE id = 1 LIMIT 1");
+        $rawAllowed = (string)($accessStmt->fetchColumn() ?: '');
+        $allowedEmails = [];
+        foreach (preg_split('/[\s,;]+/', strtolower($rawAllowed)) ?: [] as $allowedEmail) {
+            $allowedEmail = trim($allowedEmail);
+            if ($allowedEmail !== '' && filter_var($allowedEmail, FILTER_VALIDATE_EMAIL)) {
+                $allowedEmails[] = $allowedEmail;
+            }
+        }
+        $canSwitchToCashier = in_array(strtolower(trim((string)$user['email'])), array_unique($allowedEmails), true);
+    } catch (Throwable $e) {
+        // Fail closed for non-Super-Admin accounts if the access setting cannot be read.
+        $canSwitchToCashier = false;
+    }
+}
+
+$cashierModeBranch = $isCashierMode ? strtoupper(trim((string)($_SESSION['cashier_mode_branch'] ?? ''))) : '';
+
 // Handle Profile Update
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_profile'])) {
     $full_name = trim($_POST['full_name']);
@@ -285,6 +314,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
             box-shadow: 0 0 0 3px rgba(26, 75, 42, 0.1);
         }
 
+        .form-group select {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid var(--gray-300);
+            border-radius: var(--radius-md);
+            font-size: 0.9rem;
+            font-family: var(--font-sans);
+            background: white;
+        }
+
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(26, 75, 42, 0.1);
+        }
+
         .form-group input:disabled {
             background: var(--gray-50);
             color: var(--gray-500);
@@ -414,6 +459,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
         .alert i {
             font-size: 1.25rem;
         }
+
+        /* Cashier Mode Modal */
+        .cashier-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            background: rgba(17, 24, 39, 0.55);
+            padding: 1rem;
+            align-items: center;
+            justify-content: center;
+        }
+        .cashier-modal.open { display: flex; }
+        .cashier-modal-box {
+            width: 100%;
+            max-width: 440px;
+            background: #fff;
+            border-radius: var(--radius-xl);
+            border: 1px solid var(--gray-200);
+            box-shadow: var(--shadow-md);
+            padding: 1.5rem;
+        }
+        .cashier-modal-box h3 { margin: 0 0 .5rem; }
+        .cashier-modal-box p { color: var(--gray-600); margin-bottom: 1.25rem; }
 
         /* Footer */
         .footer {
@@ -742,6 +811,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
                     <?php if($_SESSION['role'] === 'cashier'): ?>
                         <a href="../dashboard/cashierdashboard" class="btn btn-secondary"><i class="fas fa-tachometer-alt"></i> Dashboard</a>
                     <?php endif; ?>
+                    <?php if ($isCashierMode): ?>
+                        <form method="POST" action="../auth/exit_cashier_mode" style="width:100%;">
+                            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['cashier_mode_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                            <button type="submit" class="btn btn-danger" style="width:100%; justify-content:center;" onclick="return confirm('Return to your original account mode?')">
+                                <i class="fas fa-arrow-left"></i> Return to Original Mode
+                            </button>
+                        </form>
+                    <?php elseif ($canSwitchToCashier): ?>
+                        <button type="button" class="btn btn-primary" onclick="openCashierModeModal()">
+                            <i class="fas fa-cash-register"></i> Switch to Cashier Mode
+                        </button>
+                    <?php endif; ?>
+
                     <a href="../auth/logout" class="btn btn-danger" onclick="return confirm('Are you sure you want to logout?')">
                         <i class="fas fa-sign-out-alt"></i> Logout
                     </a>
@@ -749,6 +831,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['change_password'])) {
             </div>
         </div>
     </div>
+
+    <?php if (!$isCashierMode && $canSwitchToCashier): ?>
+    <div class="cashier-modal" id="cashierModeModal" role="dialog" aria-modal="true" aria-labelledby="cashierModeTitle">
+        <div class="cashier-modal-box">
+            <h3 id="cashierModeTitle"><i class="fas fa-cash-register"></i> Switch to Cashier Mode</h3>
+            <p>Select the branch where you want to operate as cashier. Your own user identity remains attached to every action.</p>
+            <form method="POST" action="../auth/switch_cashier_mode">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['cashier_mode_csrf'], ENT_QUOTES, 'UTF-8') ?>">
+                <div class="form-group">
+                    <label for="cashier_branch">Branch <span class="required">*</span></label>
+                    <select name="branch" id="cashier_branch" required>
+                        <option value="">Select branch</option>
+                        <option value="KIMATHI">KIMATHI</option>
+                        <option value="MOI">MOI</option>
+                    </select>
+                </div>
+                <div class="form-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeCashierModeModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" onclick="return confirm('Switch to Cashier Mode for the selected branch?')">
+                        <i class="fas fa-right-to-bracket"></i> Enter Cashier Mode
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <div class="footer">
         <i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers
@@ -780,6 +888,20 @@ document.addEventListener('DOMContentLoaded', function() {
     adjustMainContent();
     window.addEventListener('resize', adjustMainContent);
     window.addEventListener('orientationchange', adjustMainContent);
+});
+
+function openCashierModeModal() {
+    const modal = document.getElementById('cashierModeModal');
+    if (modal) modal.classList.add('open');
+}
+
+function closeCashierModeModal() {
+    const modal = document.getElementById('cashierModeModal');
+    if (modal) modal.classList.remove('open');
+}
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closeCashierModeModal();
 });
 
 // Confirm Profile Update

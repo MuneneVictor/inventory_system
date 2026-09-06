@@ -12,13 +12,13 @@ if (!in_array($_SESSION['role'], ['super_admin', 'manager'])) {
 $cargo = $_GET['cargo'] ?? '';
 $category_id = $_GET['category_id'] ?? '';
 $model = $_GET['model'] ?? '';
-$processor = $_GET['processor'] ?? '';
-$ram = $_GET['ram'] ?? '';
-$storage_type = $_GET['storage_type'] ?? '';
-$storage_capacity = $_GET['storage_capacity'] ?? '';
-$graphics = $_GET['graphics'] ?? '';
-$touch = $_GET['touch'] ?? '';
-$device_condition = $_GET['device_condition'] ?? 'Ex-Uk';
+$processor = (isset($_GET['processor']) && $_GET['processor'] !== '') ? $_GET['processor'] : null;
+$ram = (isset($_GET['ram']) && $_GET['ram'] !== '') ? $_GET['ram'] : null;
+$storage_type = (isset($_GET['storage_type']) && $_GET['storage_type'] !== '') ? $_GET['storage_type'] : null;
+$storage_capacity = (isset($_GET['storage_capacity']) && $_GET['storage_capacity'] !== '') ? $_GET['storage_capacity'] : null;
+$graphics = (isset($_GET['graphics']) && $_GET['graphics'] !== '') ? $_GET['graphics'] : null;
+$touch = (isset($_GET['touch']) && $_GET['touch'] !== '') ? $_GET['touch'] : null;
+$device_condition = (isset($_GET['device_condition']) && $_GET['device_condition'] !== '') ? $_GET['device_condition'] : 'Ex-Uk';
 
 if (!$cargo || !$category_id || !$model) {
     die("Invalid request");
@@ -36,13 +36,13 @@ $stmt_count = $conn->prepare("
     WHERE cargo_number = :cargo
       AND category_id = :category_id
       AND model_name = :model_name
-      AND processor = :processor
-      AND ram = :ram
-      AND storage_type = :storage_type
-      AND storage_capacity = :storage_capacity
-      AND graphics = :graphics
-      AND touch = :touch
-      AND device_condition = :device_condition
+      AND processor <=> :processor
+      AND ram <=> :ram
+      AND storage_type <=> :storage_type
+      AND storage_capacity <=> :storage_capacity
+      AND graphics <=> :graphics
+      AND touch <=> :touch
+      AND device_condition <=> :device_condition
 ");
 $stmt_count->execute([
     'cargo' => $cargo,
@@ -76,13 +76,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 WHERE cargo_number = :cargo
                   AND category_id = :category_id
                   AND model_name = :model_name
-                  AND processor = :processor
-                  AND ram = :ram
-                  AND storage_type = :storage_type
-                  AND storage_capacity = :storage_capacity
-                  AND graphics = :graphics
-                  AND touch = :touch
-                  AND device_condition = :device_condition
+                  AND processor <=> :processor
+                  AND ram <=> :ram
+                  AND storage_type <=> :storage_type
+                  AND storage_capacity <=> :storage_capacity
+                  AND graphics <=> :graphics
+                  AND touch <=> :touch
+                  AND device_condition <=> :device_condition
             ");
 
             $update->execute([
@@ -106,13 +106,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 WHERE cargo_number = :cargo
                   AND category_id = :category_id
                   AND model_name = :model_name
-                  AND processor = :processor
-                  AND ram = :ram
-                  AND storage_type = :storage_type
-                  AND storage_capacity = :storage_capacity
-                  AND graphics = :graphics
-                  AND touch = :touch
-                  AND device_condition = :device_condition
+                  AND processor <=> :processor
+                  AND ram <=> :ram
+                  AND storage_type <=> :storage_type
+                  AND storage_capacity <=> :storage_capacity
+                  AND graphics <=> :graphics
+                  AND touch <=> :touch
+                  AND device_condition <=> :device_condition
                 LIMIT 1
             ");
             $stmt_first->execute([
@@ -435,11 +435,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <p><strong>Cargo Number:</strong> <?= htmlspecialchars($cargo) ?></p>
                         <p><strong>Category:</strong> <?= htmlspecialchars($category_name) ?></p>
                         <p><strong>Model:</strong> <?= htmlspecialchars($model) ?></p>
-                        <p><strong>Processor:</strong> <?= htmlspecialchars($processor) ?></p>
-                        <p><strong>RAM:</strong> <?= htmlspecialchars($ram) ?> GB</p>
-                        <p><strong>Storage:</strong> <?= htmlspecialchars($storage_type . ' ' . $storage_capacity . 'GB') ?></p>
-                        <p><strong>Graphics:</strong> <?= htmlspecialchars($graphics ?: 'Integrated') ?></p>
-                        <p><strong>Touch:</strong> <?= htmlspecialchars($touch ?: 'N/A') ?></p>
+                        <p><strong>Processor:</strong> <?= htmlspecialchars($processor ?? '-') ?></p>
+                        <p><strong>RAM:</strong> <?= $ram !== null ? htmlspecialchars($ram) . ' GB' : '-' ?></p>
+                        <p><strong>Storage:</strong> <?= $storage_capacity !== null ? htmlspecialchars(trim(($storage_type ?? '') . ' ' . $storage_capacity . 'GB')) : '-' ?></p>
+                        <p><strong>Graphics:</strong> <?= htmlspecialchars($graphics ?? '-') ?></p>
+                        <p><strong>Touch:</strong> <?= htmlspecialchars($touch ?? 'N/A') ?></p>
                         <p><strong>Condition:</strong> <?= htmlspecialchars($device_condition) ?></p>
                     </div>
 
