@@ -185,9 +185,24 @@ function buildInventoryUnion($filters, &$params) {
         }
 
         if (!empty($filters['search'])) {
-            $key = "search_{$sourceIndex}";
-            $where[] = "(src.item_name LIKE :{$key} OR src.ref_id LIKE :{$key} OR src.specs LIKE :{$key})";
-            $localParams[$key] = '%' . $filters['search'] . '%';
+            // Use a different named placeholder for each LIKE expression.
+            // Reusing the same named placeholder multiple times can trigger
+            // SQLSTATE[HY093] when PDO native prepared statements are enabled.
+            $searchValue = '%' . $filters['search'] . '%';
+
+            $nameKey = "search_name_{$sourceIndex}";
+            $refKey = "search_ref_{$sourceIndex}";
+            $specsKey = "search_specs_{$sourceIndex}";
+
+            $where[] = "(
+                src.item_name LIKE :{$nameKey}
+                OR src.ref_id LIKE :{$refKey}
+                OR src.specs LIKE :{$specsKey}
+            )";
+
+            $localParams[$nameKey] = $searchValue;
+            $localParams[$refKey] = $searchValue;
+            $localParams[$specsKey] = $searchValue;
         }
 
         // Normalize all text columns to one widely supported utf8mb4 collation before UNION.
