@@ -399,7 +399,7 @@ $conditions = ['Ex-Uk', 'New', 'Refurbished'];
                             <tr>
                                 <td><?= $i++ ?></td>
                                 <td><strong><?= htmlspecialchars($g['model_name']) ?></strong></td>
-                                <td><?= (int)$g['size_inches'] ?> inch</td>
+                                <td><?= !empty($g['size_inches']) ? (int)$g['size_inches'] . ' inch' : '-' ?></td>
                                 <td><span class="badge"><?= htmlspecialchars($g['monitor_condition'] ?? 'N/A') ?></span></td>
                                 <td class="price">
                                     <?= $g['price'] !== null ? 'KES ' . number_format($g['price'], 2) : '-' ?>

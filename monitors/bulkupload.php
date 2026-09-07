@@ -25,9 +25,24 @@ $stmt->execute([$user_id]);
 $current_user = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
 $user_branch = $current_user['branch'] ?? null;
 
-if ($user_role !== 'super_admin' && !$user_branch) {
+if (!$user_branch) {
     die("Your account has no branch assigned.");
 }
+
+// Read the real database definition for size_inches.
+// Blank Excel sizes can only be omitted safely when the column allows NULL
+// or has a database default.
+$sizeColStmt = $conn->query("
+    SELECT IS_NULLABLE, COLUMN_DEFAULT
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'monitors'
+      AND COLUMN_NAME = 'size_inches'
+    LIMIT 1
+");
+$sizeColumn = $sizeColStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+$sizeAllowsNull = strtoupper((string)($sizeColumn['IS_NULLABLE'] ?? 'NO')) === 'YES';
+$sizeHasDefault = array_key_exists('COLUMN_DEFAULT', $sizeColumn) && $sizeColumn['COLUMN_DEFAULT'] !== null;
 
 $error = '';
 $success = '';
@@ -66,8 +81,8 @@ if (($_GET['download_template'] ?? '') === 'normal') {
     $sheet = $book->getActiveSheet();
     $sheet->setTitle('Normal Monitors');
 
-    $headers = ['serial_number', 'model_name', 'size_inches', 'status'];
-    $sample = ['SN001', 'Dell P2419H', 24, 'In Stock'];
+    $headers = ['serial_number', 'model_name', 'size_inches'];
+    $sample = ['SN001', 'Dell P2419H', 24];
 
     foreach ($headers as $i => $header) {
         $col = Coordinate::stringFromColumnIndex($i + 1);
@@ -131,15 +146,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
         }
     }
 
-    $batchBranch = $user_branch;
-
-    if (!$error && in_array($user_role, ['super_admin', 'inventory_admin'], true)) {
-        $batchBranch = strtoupper(trim((string)($_POST['branch'] ?? '')));
-
-        if (!in_array($batchBranch, ['KIMATHI', 'MOI'], true)) {
-            $error = 'Please select a valid branch.';
-        }
-    }
+    $batchBranch = strtoupper((string)$user_branch);
 
     if (!$error) {
         try {
@@ -152,26 +159,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
 
             $headers = array_map('monCleanHeader', array_shift($rows));
 
-            $expectedHeaders = ['serial_number', 'model_name', 'size_inches', 'status'];
+            $expectedHeaders = ['serial_number', 'model_name', 'size_inches'];
 
             if ($headers !== $expectedHeaders) {
                 throw new Exception(
-                    'Monitor header must be exactly: serial_number, model_name, size_inches, status'
+                    'Monitor header must be exactly: serial_number, model_name, size_inches'
                 );
             }
-
-            $insert = $conn->prepare("
-                INSERT INTO monitors (
-                    serial_number,
-                    model_name,
-                    size_inches,
-                    status,
-                    branch,
-                    added_by,
-                    date_added
-                )
-                VALUES (?, ?, ?, ?, ?, ?, NOW())
-            ");
 
             $check = $conn->prepare("
                 SELECT serial_number
@@ -194,15 +188,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
                 $serial = trim((string)($row[0] ?? ''));
                 $model = trim((string)($row[1] ?? ''));
                 $size = trim((string)($row[2] ?? ''));
-                $statusRaw = trim((string)($row[3] ?? ''));
 
                 $errors = [];
-
-                $status = monStatus($statusRaw);
-
-                if ($status === null) {
-                    $errors[] = 'Status must be Sold or In Stock.';
-                }
 
                 if ($serial === '') {
                     $errors[] = 'Serial number is required.';
@@ -212,8 +199,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
                     $errors[] = 'Model name is required.';
                 }
 
-                if ($size === '' || !is_numeric($size) || (float)$size <= 0 || (float)$size > 100) {
-                    $errors[] = 'Size must be numeric between 1 and 100.';
+                if ($size !== '' && (!is_numeric($size) || (float)$size <= 0 || (float)$size > 100)) {
+                    $errors[] = 'Size must be numeric between 1 and 100 when provided.';
                 }
 
                 if ($serial !== '') {
@@ -234,14 +221,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
                     continue;
                 }
 
-                $insert->execute([
-                    $serial,
-                    $model,
-                    (float)$size,
-                    $status,
-                    $batchBranch,
-                    $user_id
-                ]);
+                $columns = ['serial_number', 'model_name', 'branch', 'added_by'];
+                $values = [':serial_number', ':model_name', ':branch', ':added_by'];
+                $params = [
+                    'serial_number' => $serial,
+                    'model_name' => $model,
+                    'branch' => $batchBranch,
+                    'added_by' => $user_id
+                ];
+
+                // size_inches is optional in Excel.
+                // If provided, save it. If blank, omit it so MySQL uses NULL/default.
+                if ($size !== '') {
+                    $columns[] = 'size_inches';
+                    $values[] = ':size_inches';
+                    $params['size_inches'] = (float)$size;
+                } elseif (!$sizeAllowsNull && !$sizeHasDefault) {
+                    $invalid++;
+                    $rowErrors[] =
+                        "Row {$rowNumber} (SN: " . ($serial ?: 'N/A') . "): " .
+                        "size_inches is blank, but monitors.size_inches is still NOT NULL with no default. " .
+                        "Change that database column to allow NULL before uploading blank sizes.";
+                    continue;
+                }
+
+                // Other fields not supplied by this Excel format use their database defaults.
+                $insert = $conn->prepare(
+                    "INSERT INTO monitors (" . implode(', ', $columns) . ")
+                     VALUES (" . implode(', ', $values) . ")"
+                );
+                $insert->execute($params);
 
                 $count++;
             }
@@ -254,7 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
 
                 $log->execute([
                     $user_id,
-                    "Uploaded {$count} monitors via normal monitor bulk upload to branch {$batchBranch}"
+                    "Uploaded {$count} monitors via normal monitor bulk upload. Branch used from logged-in account: {$batchBranch}"
                 ]);
             }
 
@@ -367,14 +376,20 @@ body{
 }
 .format table{
     border-collapse:collapse;
+    table-layout:fixed;
     min-width:700px;
     width:100%
 }
+.format th:nth-child(1),.format td:nth-child(1){width:33.33%}
+.format th:nth-child(2),.format td:nth-child(2){width:33.33%}
+.format th:nth-child(3),.format td:nth-child(3){width:33.34%}
 .format th,.format td{
-    padding:.58rem;
+    padding:.72rem .8rem;
     border-bottom:1px solid var(--b);
     white-space:nowrap;
-    font-size:.78rem
+    font-size:.78rem;
+    text-align:center;
+    vertical-align:middle
 }
 .format th{
     background:#eabf30;
@@ -403,8 +418,7 @@ body{
 <section class="box">
     <h1><i class="fas fa-desktop"></i> Bulk Upload Monitors</h1>
     <div class="help">
-        Upload monitors into the normal monitor inventory only.
-        Iman Inventory and Iman's Hustle monitors are managed separately in their own inventory tables.
+       
     </div>
 </section>
 
@@ -448,16 +462,8 @@ body{
 
     <div class="g">
         <label>Branch</label>
-
-        <?php if(in_array($user_role,['super_admin','inventory_admin'],true)):?>
-        <select name="branch" required>
-            <option value="">-- Select Branch --</option>
-            <option value="KIMATHI">KIMATHI</option>
-            <option value="MOI">MOI</option>
-        </select>
-        <?php else:?>
         <input value="<?=htmlspecialchars((string)$user_branch)?>" disabled>
-        <?php endif;?>
+        <small class="help">Automatically uses your logged-in account branch.</small>
     </div>
 
     <div class="g">
@@ -484,22 +490,34 @@ body{
                 <th>serial_number</th>
                 <th>model_name</th>
                 <th>size_inches</th>
-                <th>status</th>
             </tr>
 
             <tr>
                 <td>SN001</td>
                 <td>Dell P2419H</td>
                 <td>24</td>
-                <td>In Stock</td>
             </tr>
         </table>
     </div>
 
     <p class="help">
-        Status may be <strong>In Stock</strong> or <strong>Sold</strong>.
-        If Status is blank or "-", it automatically becomes <strong>In Stock</strong>.
+        <strong>serial_number</strong> and <strong>model_name</strong> are required.
+        <strong>size_inches</strong> is optional; leave it blank when unknown.
+        Branch is taken automatically from the logged-in user's account.
+        Fields not included in this Excel format, such as Status and Location, use the defaults defined in the monitors table.
     </p>
+
+    <?php if (!$sizeAllowsNull && !$sizeHasDefault): ?>
+        <div class="alert err" style="margin-top:.8rem;margin-bottom:0;">
+            <i class="fas fa-database"></i>
+            <span>
+                Database check: <strong>monitors.size_inches is still NOT NULL and has no default.</strong>
+                Blank size values cannot be uploaded until that column is changed to allow NULL.
+            </span>
+        </div>
+    <?php else: ?>
+      
+    <?php endif; ?>
 
 </div>
 

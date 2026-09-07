@@ -171,6 +171,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                             <th>Serial</th>
                             <th>Model</th>
                             <th>Branch</th>
+                            <th>Price</th>
                             <th>Added By</th>
                             <th>Date Added</th>
                             <th>Action</th>
@@ -183,6 +184,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                             <td><code><?= htmlspecialchars($p['serial_number']) ?></code></td>
                             <td><?= htmlspecialchars($p['model_name']) ?></td>
                             <td class="<?= $p['branch'] === 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>"><?= htmlspecialchars($p['branch']) ?></td>
+                            <td><?= htmlspecialchars($p['price'] ?? '-') ?></td>
                             <td><?= htmlspecialchars($p['added_by']) ?></td>
                             <td><?= date('M j, Y', strtotime($p['date_added'])) ?></td>
                             <td><a href="view_printer?sn=<?= urlencode($p['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>

@@ -13,13 +13,10 @@ if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin', 'manager']))
 $user_id = (int) $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 
-$user_branch = null;
-if ($user_role !== 'super_admin') {
-    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $user_branch = $stmt->fetchColumn();
-    if (!$user_branch) die("Your account has no branch assigned.");
-}
+$stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
+$stmt->execute([$user_id]);
+$user_branch = $stmt->fetchColumn();
+if (!$user_branch) die("Your account has no branch assigned.");
 
 $error = "";
 $success = "";
@@ -30,15 +27,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!isset($_FILES['file']) || $_FILES['file']['error'] !== 0) {
         $error = "Please upload a valid file.";
     } else {
-        if ($user_role === 'super_admin') {
-            $branch = $_POST['branch'] ?? '';
-            if (!$branch || !in_array($branch, ['KIMATHI', 'MOI'])) {
-                $error = "Please select a valid branch.";
-            }
-        } else {
-            $branch = $user_branch;
-        }
-
         if (!$error) {
             $fileTmp = $_FILES['file']['tmp_name'];
             $fileName = $_FILES['file']['name'];
@@ -55,12 +43,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (empty($rows)) {
                         $error = "The file is empty.";
                     } else {
-                        // Validate header
-                        $header = array_map('trim', $rows[0]);
-                        $expectedHeader = ['serial_number', 'model_name'];
+                        // Validate header.
+                        // Required: serial_number and MODEL/model_name.
+                        // Optional: cargo_number, location, branch.
+                        $header = array_map(static fn($h) => trim((string)($h ?? '')), $rows[0]);
                         $headerLower = array_map('strtolower', $header);
-                        if ($headerLower !== $expectedHeader) {
-                            $error = "Invalid header. Expected columns: " . implode(', ', $expectedHeader);
+
+                        $serialIndex = array_search('serial_number', $headerLower, true);
+                        $modelIndex = array_search('model', $headerLower, true);
+                        if ($modelIndex === false) {
+                            $modelIndex = array_search('model_name', $headerLower, true);
+                        }
+
+                        $cargoIndex = array_search('cargo_number', $headerLower, true);
+                        $locationIndex = array_search('location', $headerLower, true);
+                        $branchIndex = array_search('branch', $headerLower, true);
+
+                        if ($serialIndex === false || $modelIndex === false) {
+                            $error = "Invalid header. Required columns: serial_number and MODEL. Optional columns: cargo_number, location, branch.";
                         } else {
                             unset($rows[0]); // remove header
 
@@ -71,23 +71,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             $rowErrors = [];
                             $skippedSerials = [];
 
-                            // Prepare insert
-                            $insertStmt = $conn->prepare("
-                                INSERT INTO printers (serial_number, model_name, branch, added_by, status, date_added)
-                                VALUES (?, ?, ?, ?, 'In Stock', NOW())
-                            ");
-
                             foreach ($rows as $rowIndex => $row) {
                                 $rowNumber = $rowIndex + 2; // 1-indexed with header
-                                // Ensure at least 2 columns
-                                if (count($row) < 2) {
-                                    $invalidRows++;
-                                    $rowErrors[] = "Row $rowNumber: Not enough columns (expected 2).";
-                                    continue;
-                                }
 
-                                $serial = trim($row[0] ?? '');
-                                $model = trim($row[1] ?? '');
+                                $serial = trim((string)($row[$serialIndex] ?? ''));
+                                $model = trim((string)($row[$modelIndex] ?? ''));
+                                $cargo = $cargoIndex !== false ? trim((string)($row[$cargoIndex] ?? '')) : '';
+                                $location = $locationIndex !== false ? trim((string)($row[$locationIndex] ?? '')) : '';
+                                $branchRaw = $branchIndex !== false ? trim((string)($row[$branchIndex] ?? '')) : '';
+
+                                // Blank optional branch falls back to the logged-in user's branch.
+                                $rowBranch = $branchRaw !== '' ? strtoupper($branchRaw) : strtoupper((string)$user_branch);
 
                                 $errors = [];
 
@@ -108,6 +102,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     $errors[] = "Model name is required.";
                                 }
 
+                                if (!in_array($rowBranch, ['KIMATHI', 'MOI'], true)) {
+                                    $errors[] = "Invalid branch '$branchRaw'. Use KIMATHI, MOI, or leave blank to use your logged-in branch.";
+                                }
+
                                 if (!empty($errors)) {
                                     $invalidRows++;
                                     $rowErrors[] = "Row $rowNumber (SN: $serial): " . implode(' ', $errors);
@@ -119,9 +117,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     continue;
                                 }
 
-                                // Insert
+                                // Insert. cargo_number and location are omitted when blank so
+                                // the actual database defaults on the printers table are used.
                                 try {
-                                    $insertStmt->execute([$serial, $model, $branch, $added_by]);
+                                    $columns = ['serial_number', 'model_name', 'branch', 'added_by', 'status', 'date_added'];
+                                    $placeholders = [':serial_number', ':model_name', ':branch', ':added_by', "'In Stock'", 'NOW()'];
+                                    $params = [
+                                        'serial_number' => $serial,
+                                        'model_name' => $model,
+                                        'branch' => $rowBranch,
+                                        'added_by' => $added_by
+                                    ];
+
+                                    if ($cargo !== '') {
+                                        $columns[] = 'cargo_number';
+                                        $placeholders[] = ':cargo_number';
+                                        $params['cargo_number'] = $cargo;
+                                    }
+
+                                    if ($location !== '') {
+                                        $columns[] = 'location';
+                                        $placeholders[] = ':location';
+                                        $params['location'] = $location;
+                                    }
+
+                                    $insertStmt = $conn->prepare(
+                                        "INSERT INTO printers (" . implode(', ', $columns) . ")
+                                         VALUES (" . implode(', ', $placeholders) . ")"
+                                    );
+                                    $insertStmt->execute($params);
                                     $count++;
                                 } catch (PDOException $e) {
                                     $invalidRows++;
@@ -131,10 +155,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             if ($count > 0) {
                                 $log = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'Bulk upload printers', ?)");
-                                $log->execute([$user_id, "Uploaded $count printers to $branch branch"]);
+                                $log->execute([$user_id, "Uploaded $count printer(s) via Excel bulk upload. Blank branch cells used logged-in branch: $user_branch."]);
                             }
 
-                            $success = "$count printer(s) uploaded successfully to $branch branch.";
+                            $success = "$count printer(s) uploaded successfully.";
                             if ($duplicates > 0) {
                                 $success .= " $duplicates duplicate serial(s) were skipped.";
                             }
@@ -273,34 +297,20 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
             <div class="card-header"><h2><i class="fas fa-table"></i> Upload Excel / CSV File</h2></div>
             <div class="card-body">
                 <div class="info-box">
-                    <?php if ($user_role === 'super_admin'): ?>
-                        <strong>You can upload printers to any branch.</strong>
-                    <?php else: ?>
-                        <strong>Your branch: <?= htmlspecialchars($user_branch) ?></strong>
-                    <?php endif; ?>
+                    <strong>Your logged-in branch: <?= htmlspecialchars($user_branch) ?></strong>
                     <br><br>
                     <strong>File Format Requirements:</strong>
                     <ul>
-                        <li>First row must be the header: <code>serial_number, model_name</code></li>
+                        <li>Required columns: <code>serial_number, MODEL</code></li>
+                        <li>Optional columns: <code>cargo_number, location, branch</code></li>
                         <li>Serial number: required, unique</li>
-                        <li>Model name: required</li>
+                        <li>MODEL: required</li>
+                        <li>Blank cargo_number and location use the printers table defaults.</li>
+                        <li>Blank branch uses your logged-in branch automatically.</li>
                     </ul>
                 </div>
 
                 <form method="POST" enctype="multipart/form-data">
-                    <?php if ($user_role === 'super_admin'): ?>
-                        <div class="form-group">
-                            <label>Branch</label>
-                            <select name="branch" required>
-                                <option value="">-- Select Branch --</option>
-                                <option value="KIMATHI">KIMATHI</option>
-                                <option value="MOI">MOI</option>
-                            </select>
-                        </div>
-                    <?php else: ?>
-                        <input type="hidden" name="branch" value="<?= htmlspecialchars($user_branch) ?>">
-                        <div class="info-box" style="margin-bottom:1rem;">Branch: <strong><?= htmlspecialchars($user_branch) ?></strong></div>
-                    <?php endif; ?>
                     <div class="form-group">
                         <label>Excel/CSV File (.xlsx, .xls, .csv)</label>
                         <input type="file" name="file" accept=".csv,.xlsx,.xls" required>
@@ -334,7 +344,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Download template
     document.getElementById('downloadTemplate').addEventListener('click', function(e) {
         e.preventDefault();
-        const csv = "serial_number,model_name\nP001,HP LaserJet Pro M404\nP002,Canon imageCLASS MF743Cdw\nP003,Epson WorkForce Pro WF-4830";
+        const csv = "serial_number,MODEL,cargo_number,location,branch\nP001,HP LaserJet Pro M404,OC.5,B.STORE,KIMATHI\nP002,Canon imageCLASS MF743Cdw,,,\nP003,Epson WorkForce Pro WF-4830,OC.5,B.STORE,MOI";
         const blob = new Blob([csv], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');

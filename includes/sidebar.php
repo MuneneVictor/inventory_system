@@ -114,6 +114,7 @@ $allowedEmails = [
                     ['Search Device', '../devices/search', 'fas fa-search'],
                     ['Give out Device', '../devices/give_device', 'fas fa-gift'],
                     ['Device Logs', '../devices/device_logs', 'fas fa-clipboard-list'],
+                    ['Faulty Devices', '../devices/faulty_devices', 'fas fa-exclamation-triangle'],
                 ];
                  if ($role === 'super_admin' || in_array($userEmail, $allowedEmails, true)){
                       $deviceItems[] = ['Sold', '../devices/sold', 'fas fa-money-bill-wave'];

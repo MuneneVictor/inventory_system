@@ -183,7 +183,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                             <td><?= $i++ ?></td>
                             <td><code><?= htmlspecialchars($m['serial_number']) ?></code></td>
                             <td><?= htmlspecialchars($m['model_name']) ?></td>
-                            <td><?= $m['size_inches'] ?>\"</td>
+                            <td><?= $m['size_inches'] ?? '-' ?></td>
                             <td class="<?= $m['branch'] === 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>"><?= htmlspecialchars($m['branch']) ?></td>
                             <td><?= htmlspecialchars($m['added_by']) ?></td>
                             <td><?= date('M j, Y', strtotime($m['date_added'])) ?></td>
