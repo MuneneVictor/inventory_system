@@ -21,29 +21,65 @@ if ($user_role !== 'super_admin') {
 $filter_serial = $_GET['serial'] ?? '';
 $filter_branch = $_GET['branch'] ?? '';
 
-$sql = "SELECT m.serial_number, m.model_name, m.size_inches, m.branch, m.date_added, u.full_name AS added_by
-        FROM monitors m
-        JOIN users u ON m.added_by = u.id
-        WHERE m.status = 'In Stock'";
+// Pagination only: default 50, selectable up to 200.
+$allowed_per_page = [50, 100, 150, 200];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 50;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 50;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+$where = ["m.status = 'In Stock'"];
 $params = [];
 
 if ($user_role !== 'super_admin') {
-    $sql .= " AND m.branch = ?";
-    $params[] = $user_branch;
+    $where[] = "m.branch = :user_branch";
+    $params['user_branch'] = $user_branch;
 }
 if (!empty($filter_serial)) {
-    $sql .= " AND m.serial_number LIKE ?";
-    $params[] = "%$filter_serial%";
+    $where[] = "m.serial_number LIKE :serial";
+    $params['serial'] = "%{$filter_serial}%";
 }
 if ($user_role === 'super_admin' && !empty($filter_branch)) {
-    $sql .= " AND m.branch = ?";
-    $params[] = $filter_branch;
+    $where[] = "m.branch = :branch";
+    $params['branch'] = $filter_branch;
 }
-$sql .= " ORDER BY m.date_added DESC";
+
+$whereSql = implode(" AND ", $where);
+
+// Lightweight count first so we do not load all monitor rows.
+$countStmt = $conn->prepare("SELECT COUNT(*) FROM monitors m WHERE {$whereSql}");
+$countStmt->execute($params);
+$total_monitors = (int)$countStmt->fetchColumn();
+
+$total_pages = max(1, (int)ceil($total_monitors / $per_page));
+if ($page > $total_pages) {
+    $page = $total_pages;
+}
+$offset = ($page - 1) * $per_page;
+
+// Load only the rows needed for the current page.
+$sql = "SELECT m.serial_number, m.model_name, m.size_inches, m.branch, m.date_added, u.full_name AS added_by
+        FROM monitors m
+        JOIN users u ON m.added_by = u.id
+        WHERE {$whereSql}
+        ORDER BY m.date_added DESC
+        LIMIT :limit OFFSET :offset";
 
 $stmt = $conn->prepare($sql);
-$stmt->execute($params);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $per_page, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $monitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+function monitorPageUrl(int $pageNumber): string {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
 
 date_default_timezone_set('Africa/Nairobi');
 $hour = date('G');
@@ -113,6 +149,14 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         .branch-moi { color: #3b82f6; font-weight: 500; }
         .empty-state { text-align: center; padding: 3rem; color: var(--gray-500); }
         .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 1.25rem; border-top:1px solid var(--gray-200); background:white; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
+
         @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
         @media (max-width: 768px) { .filter-form { flex-direction: column; } .filter-group { min-width: auto; } .btn, .btn-view { width: 100%; justify-content: center; } }
     </style>
@@ -136,11 +180,12 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     </div>
 
     <div class="stats-row">
-        <div class="stat-card"><div class="stat-value"><?= count($monitors) ?></div><div class="stat-label">Total In Stock</div></div>
+        <div class="stat-card"><div class="stat-value"><?= number_format($total_monitors) ?></div><div class="stat-label">Total In Stock</div></div>
         <div class="stat-card"><div class="stat-value"><?= ($user_role === 'super_admin' ? '2' : '1') ?></div><div class="stat-label">Branch(es)</div></div>
     </div>
 
     <form method="GET" class="filter-form" id="filterForm">
+        <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
         <div class="filter-group">
             <label>Serial Number</label>
             <input type="text" name="serial" placeholder="Scan or type..." value="<?= htmlspecialchars($filter_serial) ?>" autofocus>
@@ -178,7 +223,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                         </tr>
                     </thead>
                     <tbody>
-                    <?php $i=1; foreach ($monitors as $m): ?>
+                    <?php $i=$offset + 1; foreach ($monitors as $m): ?>
                         <tr>
                             <td><?= $i++ ?></td>
                             <td><code><?= htmlspecialchars($m['serial_number']) ?></code></td>
@@ -196,6 +241,52 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                 <div class="empty-state"><i class="fas fa-box-open"></i><p>No monitors in stock.</p></div>
             <?php endif; ?>
         </div>
+
+        <?php if ($total_monitors > 0): ?>
+        <div class="pagination-bar">
+            <form method="GET" class="per-page-form">
+                <?php foreach ($_GET as $key => $value): ?>
+                    <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                        <input type="hidden" name="<?= htmlspecialchars((string)$key) ?>" value="<?= htmlspecialchars((string)$value) ?>">
+                    <?php endif; ?>
+                <?php endforeach; ?>
+
+                <label for="monitorPerPage">Show</label>
+                <select id="monitorPerPage" name="per_page" onchange="this.form.submit()">
+                    <?php foreach ($allowed_per_page as $size): ?>
+                        <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <span>per page</span>
+            </form>
+
+            <div class="pagination-controls">
+                <?php if ($page > 1): ?>
+                    <a href="<?= htmlspecialchars(monitorPageUrl($page - 1)) ?>">Previous</a>
+                <?php else: ?>
+                    <span class="disabled">Previous</span>
+                <?php endif; ?>
+
+                <?php
+                $startPage = max(1, $page - 2);
+                $endPage = min($total_pages, $page + 2);
+                for ($p = $startPage; $p <= $endPage; $p++):
+                ?>
+                    <?php if ($p === $page): ?>
+                        <span class="active"><?= $p ?></span>
+                    <?php else: ?>
+                        <a href="<?= htmlspecialchars(monitorPageUrl($p)) ?>"><?= $p ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+
+                <?php if ($page < $total_pages): ?>
+                    <a href="<?= htmlspecialchars(monitorPageUrl($page + 1)) ?>">Next</a>
+                <?php else: ?>
+                    <span class="disabled">Next</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>

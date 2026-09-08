@@ -14,38 +14,79 @@ $search_sn = trim($_GET['sn'] ?? '');
 $search_model = trim($_GET['model'] ?? '');
 $search_branch = trim($_GET['branch'] ?? '');
 
-$sql = "SELECT * FROM smartboards WHERE status = 'instock'";
+$allowed_per_page = [50, 100, 150, 200];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 50;
+if (!in_array($per_page, $allowed_per_page, true)) $per_page = 50;
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+$where = ["status = 'instock'"];
 $params = [];
 
 if ($search_sn) {
-    $sql .= " AND serial_number LIKE :sn";
+    $where[] = "serial_number LIKE :sn";
     $params['sn'] = "%$search_sn%";
 }
 if ($search_model) {
-    $sql .= " AND model LIKE :model";
+    $where[] = "model LIKE :model";
     $params['model'] = "%$search_model%";
 }
 if ($search_branch && $role !== 'manager') {
-    $sql .= " AND branch = :branch";
+    $where[] = "branch = :branch";
     $params['branch'] = $search_branch;
 }
-// For managers, restrict to their branch
+
+$user_branch = '';
 if ($role === 'manager') {
     $user_stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
     $user_stmt->execute([$user_id]);
-    $user_branch = $user_stmt->fetchColumn();
-    if ($user_branch) {
-        $sql .= " AND branch = :user_branch";
+    $user_branch = (string)$user_stmt->fetchColumn();
+    if ($user_branch !== '') {
+        $where[] = "branch = :user_branch";
         $params['user_branch'] = $user_branch;
     }
 }
 
-$sql .= " ORDER BY date_added DESC";
+$whereSql = implode(" AND ", $where);
+
+$countStmt = $conn->prepare("SELECT COUNT(*) FROM smartboards WHERE {$whereSql}");
+$countStmt->execute($params);
+$total_instock = (int)$countStmt->fetchColumn();
+
+$total_pages = max(1, (int)ceil($total_instock / $per_page));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $per_page;
+
+$statsStmt = $conn->prepare("
+    SELECT COUNT(DISTINCT model) AS unique_models,
+           COUNT(DISTINCT branch) AS branch_count
+    FROM smartboards
+    WHERE {$whereSql}
+");
+$statsStmt->execute($params);
+$stats = $statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+$unique_models = (int)($stats['unique_models'] ?? 0);
+$branch_count = (int)($stats['branch_count'] ?? 0);
+
+$sql = "SELECT *
+        FROM smartboards
+        WHERE {$whereSql}
+        ORDER BY date_added DESC
+        LIMIT :limit OFFSET :offset";
+
 $stmt = $conn->prepare($sql);
-$stmt->execute($params);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $per_page, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $smartboards = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-$total_instock = count($smartboards);
+function smartboardPageUrl(int $pageNumber): string {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
 ?>
 
 <!DOCTYPE html>
@@ -307,6 +348,14 @@ $total_instock = count($smartboards);
             border-top: 1px solid var(--gray-200);
         }
 
+.pagination-bar{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;padding:1rem 1.25rem;border-top:1px solid var(--gray-200);background:#fff}
+.pagination-controls{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+.pagination-controls a,.pagination-controls span{padding:.45rem .7rem;border:1px solid var(--gray-300);border-radius:var(--radius-md);text-decoration:none;color:var(--gray-600);background:#fff;font-size:.85rem}
+.pagination-controls .active{background:var(--primary);color:#fff;border-color:var(--primary)}
+.pagination-controls .disabled{opacity:.45;pointer-events:none}
+.per-page-form{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--gray-600)}
+.per-page-form select{padding:.45rem .65rem;border:1px solid var(--gray-300);border-radius:var(--radius-md);background:#fff}
+
         @media (max-width: 1200px) {
             .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; }
         }
@@ -357,12 +406,12 @@ $total_instock = count($smartboards);
         </div>
         <div class="stat-card">
             <div class="stat-icon"><i class="fas fa-tag"></i></div>
-            <div class="stat-value"><?= number_format(count(array_unique(array_column($smartboards, 'model')))) ?></div>
+            <div class="stat-value"><?= number_format($unique_models) ?></div>
             <div class="stat-label">Unique Models</div>
         </div>
         <div class="stat-card">
             <div class="stat-icon"><i class="fas fa-store"></i></div>
-            <div class="stat-value"><?= number_format(count(array_unique(array_column($smartboards, 'branch')))) ?></div>
+            <div class="stat-value"><?= number_format($branch_count) ?></div>
             <div class="stat-label">Branches</div>
         </div>
     </div>
@@ -370,6 +419,7 @@ $total_instock = count($smartboards);
     <div class="search-section">
         <div class="search-title"><i class="fas fa-filter"></i> Filter Smartboards</div>
         <form method="GET" class="search-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="search-group">
                 <label>Serial Number</label>
                 <input type="text" name="sn" placeholder="Scan or type serial" value="<?= htmlspecialchars($search_sn) ?>" autofocus>
@@ -418,7 +468,7 @@ $total_instock = count($smartboards);
                         </tr>
                     </thead>
                     <tbody>
-                        <?php $i=1; foreach ($smartboards as $s): ?>
+                        <?php $i=$offset + 1; foreach ($smartboards as $s): ?>
                         <tr>
                             <td><?= $i++ ?></td>
                             <td><span class="serial-code"><?= htmlspecialchars($s['serial_number']) ?></span></td>
@@ -440,6 +490,51 @@ $total_instock = count($smartboards);
                 </table>
             <?php endif; ?>
         </div>
+
+        <?php if ($total_instock > 0): ?>
+        <div class="pagination-bar">
+            <form method="GET" class="per-page-form">
+                <?php foreach ($_GET as $key => $value): ?>
+                    <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                        <input type="hidden" name="<?= htmlspecialchars((string)$key) ?>" value="<?= htmlspecialchars((string)$value) ?>">
+                    <?php endif; ?>
+                <?php endforeach; ?>
+                <label for="smartboardPerPage">Show</label>
+                <select id="smartboardPerPage" name="per_page" onchange="this.form.submit()">
+                    <?php foreach ($allowed_per_page as $size): ?>
+                        <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <span>per page</span>
+            </form>
+
+            <div class="pagination-controls">
+                <?php if ($page > 1): ?>
+                    <a href="<?= htmlspecialchars(smartboardPageUrl($page - 1)) ?>">Previous</a>
+                <?php else: ?>
+                    <span class="disabled">Previous</span>
+                <?php endif; ?>
+
+                <?php
+                $startPage = max(1, $page - 2);
+                $endPage = min($total_pages, $page + 2);
+                for ($p = $startPage; $p <= $endPage; $p++):
+                ?>
+                    <?php if ($p === $page): ?>
+                        <span class="active"><?= $p ?></span>
+                    <?php else: ?>
+                        <a href="<?= htmlspecialchars(smartboardPageUrl($p)) ?>"><?= $p ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+
+                <?php if ($page < $total_pages): ?>
+                    <a href="<?= htmlspecialchars(smartboardPageUrl($page + 1)) ?>">Next</a>
+                <?php else: ?>
+                    <span class="disabled">Next</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 
     <div class="footer">

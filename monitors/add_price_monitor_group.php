@@ -7,39 +7,67 @@ if (!in_array($_SESSION['role'], ['super_admin', 'manager'])) {
     die("Access denied.");
 }
 
-// Get group parameters from GET
-$model = trim($_GET['model'] ?? '');
-$size = (int) ($_GET['size'] ?? 0);
-$condition = trim($_GET['condition'] ?? '');
+// Get group parameters from GET.
+// Size and condition are allowed to be NULL/blank because those fields may be unknown.
+$model = trim((string)($_GET['model'] ?? ''));
 
-if (empty($model) || $size <= 0) {
-    die("Invalid group parameters.");
+$sizeRaw = trim((string)($_GET['size'] ?? ''));
+$sizeKey = strtolower($sizeRaw);
+
+// Treat every "unknown size" representation coming from the price list as NULL.
+// This covers blank, NULL, N/A, "-", 0, "0 inch", etc.
+if (
+    $sizeRaw === '' ||
+    in_array($sizeKey, ['null', 'n/a', 'na', '-', 'unknown'], true) ||
+    !is_numeric($sizeRaw) ||
+    (float)$sizeRaw <= 0
+) {
+    $size = null;
+} else {
+    $size = (int)$sizeRaw;
 }
 
-// Build condition clause for monitor_condition
-$cond_clause = $condition ? '= :condition' : 'IS NULL';
+$conditionRaw = trim((string)($_GET['condition'] ?? ''));
+$conditionKey = strtolower($conditionRaw);
+
+// Treat blank/placeholder condition values as NULL too.
+if (
+    $conditionRaw === '' ||
+    in_array($conditionKey, ['null', 'n/a', 'na', '-', 'unknown'], true)
+) {
+    $condition = null;
+} else {
+    $condition = $conditionRaw;
+}
+
+if ($model === '') {
+    die("Invalid group parameters.");
+}
 
 // Count how many monitors in this group are missing a price
 $countStmt = $conn->prepare("
     SELECT COUNT(*) 
     FROM monitors 
-    WHERE model_name = :model 
-      AND size_inches = :size
-      AND monitor_condition $cond_clause
+    WHERE model_name = :model
+      AND size_inches <=> :size
+      AND monitor_condition <=> :condition
       AND status = 'In Stock'
       AND price IS NULL
 ");
-$params = ['model' => $model, 'size' => $size];
-if ($condition) $params['condition'] = $condition;
+$params = [
+    'model' => $model,
+    'size' => $size,
+    'condition' => $condition
+];
 $countStmt->execute($params);
 $total_count = $countStmt->fetchColumn();
 
 // Fetch one sample monitor to display specs
 $sampleStmt = $conn->prepare("
     SELECT * FROM monitors 
-    WHERE model_name = :model 
-      AND size_inches = :size
-      AND monitor_condition $cond_clause
+    WHERE model_name = :model
+      AND size_inches <=> :size
+      AND monitor_condition <=> :condition
       AND status = 'In Stock'
     LIMIT 1
 ");
@@ -47,7 +75,15 @@ $sampleStmt->execute($params);
 $sample = $sampleStmt->fetch(PDO::FETCH_ASSOC);
 
 if (!$sample) {
-    die("No monitors found matching this group without a price.");
+    $sizeLabel = $size === null ? 'NULL' : (string)$size;
+    $conditionLabel = $condition === null ? 'NULL' : $condition;
+
+    die(
+        "No monitors found matching this group. " .
+        "Model: " . htmlspecialchars($model) .
+        ", Size: " . htmlspecialchars($sizeLabel) .
+        ", Condition: " . htmlspecialchars($conditionLabel) . "."
+    );
 }
 
 $error = "";
@@ -65,13 +101,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 UPDATE monitors
                 SET price = :price
                 WHERE model_name = :model
-                  AND size_inches = :size
-                  AND monitor_condition $cond_clause
+                  AND size_inches <=> :size
+                  AND monitor_condition <=> :condition
                   AND status = 'In Stock'
                   AND price IS NULL
             ");
-            $updateParams = ['price' => $price, 'model' => $model, 'size' => $size];
-            if ($condition) $updateParams['condition'] = $condition;
+            $updateParams = [
+                'price' => $price,
+                'model' => $model,
+                'size' => $size,
+                'condition' => $condition
+            ];
             $update->execute($updateParams);
             $affected = $update->rowCount();
         } else {
@@ -80,8 +120,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 SELECT serial_number 
                 FROM monitors
                 WHERE model_name = :model
-                  AND size_inches = :size
-                  AND monitor_condition $cond_clause
+                  AND size_inches <=> :size
+                  AND monitor_condition <=> :condition
                   AND status = 'In Stock'
                   AND price IS NULL
                 LIMIT 1
@@ -106,7 +146,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $log = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (:uid, 'Added monitor group price', :details)");
         $log->execute([
             'uid' => $_SESSION['user_id'],
-            'details' => "Added price KES $price for monitor group: $model ($size inch" . ($condition ? ", $condition" : "") . ") – $affected monitors updated"
+            'details' => "Added price KES $price for monitor group: $model (" .
+                ($size !== null ? $size . " inch" : "Size N/A") .
+                ", " . ($condition !== null ? $condition : "Condition N/A") .
+                ") – $affected monitors updated"
         ]);
 
         header("Location: price_list_monitors");
@@ -386,9 +429,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 <form method="POST">
                     <div class="specs-box">
-                        <p><strong>Model:</strong> <?= htmlspecialchars($sample['model_name']) ?></p>
-                        <p><strong>Size:</strong> <?= (int)$sample['size_inches'] ?> inch</p>
-                        <p><strong>Condition:</strong> <?= htmlspecialchars($sample['monitor_condition'] ?? 'N/A') ?></p>
+                        <p><strong>Model:</strong> <?= htmlspecialchars((string)$sample['model_name']) ?></p>
+                        <p><strong>Size:</strong> <?= $sample['size_inches'] !== null ? htmlspecialchars((string)$sample['size_inches']) . ' inch' : 'N/A' ?></p>
+                        <p><strong>Condition:</strong> <?= htmlspecialchars(($sample['monitor_condition'] !== null && $sample['monitor_condition'] !== '') ? (string)$sample['monitor_condition'] : 'N/A') ?></p>
                     </div>
 
                     <?php if ($total_count > 1): ?>

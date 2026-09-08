@@ -24,57 +24,136 @@ if ($role === 'manager') {
 
 // Handle search inputs
 $search_name = trim($_GET['name'] ?? '');
+$search_type = trim($_GET['type'] ?? '');
 $search_branch = trim($_GET['branch'] ?? '');
 $search_place = trim($_GET['place'] ?? '');
 
-// Build query – only show instock accessories
-$sql = "SELECT a.*, 
+// Pagination: default 50, selectable up to 200.
+$allowed_per_page = [50, 100, 150, 200];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 50;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 50;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+// Shared filters
+$where = ["a.status = 'instock'"];
+$params = [];
+
+if ($role === 'manager' && !empty($user_branch)) {
+    $where[] = "a.branch = :user_branch";
+    $params['user_branch'] = $user_branch;
+}
+if ($search_name !== '') {
+    $where[] = "a.name LIKE :name";
+    $params['name'] = "%{$search_name}%";
+}
+if ($search_type !== '') {
+    $where[] = "a.type = :type";
+    $params['type'] = $search_type;
+}
+if ($search_branch !== '' && $role !== 'manager') {
+    $where[] = "a.branch = :branch";
+    $params['branch'] = $search_branch;
+}
+if ($search_place !== '') {
+    $where[] = "a.place = :place";
+    $params['place'] = $search_place;
+}
+$whereSql = implode(" AND ", $where);
+
+// Lightweight count for pagination.
+$countStmt = $conn->prepare("SELECT COUNT(*) FROM accessories a WHERE {$whereSql}");
+$countStmt->execute($params);
+$total_items = (int)$countStmt->fetchColumn();
+
+$total_pages = max(1, (int)ceil($total_items / $per_page));
+if ($page > $total_pages) {
+    $page = $total_pages;
+}
+$offset = ($page - 1) * $per_page;
+
+// Stats in SQL, without loading all rows.
+$statsStmt = $conn->prepare("
+    SELECT
+        COALESCE(SUM(a.quantity), 0) AS total_quantity,
+        COALESCE(SUM(CASE WHEN a.price IS NOT NULL THEN a.quantity * a.price ELSE 0 END), 0) AS total_value
+    FROM accessories a
+    WHERE {$whereSql}
+");
+$statsStmt->execute($params);
+$stats = $statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+$total_quantity = (int)($stats['total_quantity'] ?? 0);
+$total_value = (float)($stats['total_value'] ?? 0);
+
+// Load only current page rows.
+$sql = "SELECT a.*,
                u1.full_name AS added_by_name,
                u2.full_name AS updated_by_name
         FROM accessories a
         LEFT JOIN users u1 ON a.added_by = u1.id
         LEFT JOIN users u2 ON a.updated_by = u2.id
-        WHERE a.status = 'instock'";
-$params = [];
-
-// Manager restriction
-if ($role === 'manager' && !empty($user_branch)) {
-    $sql .= " AND a.branch = :user_branch";
-    $params['user_branch'] = $user_branch;
-}
-
-// Search filters
-if ($search_name) {
-    $sql .= " AND a.name LIKE :name";
-    $params['name'] = "%$search_name%";
-}
-
-if ($search_branch && $role !== 'manager') {
-    $sql .= " AND a.branch = :branch";
-    $params['branch'] = $search_branch;
-}
-
-if ($search_place) {
-    $sql .= " AND a.place = :place";
-    $params['place'] = $search_place;
-}
-
-$sql .= " ORDER BY a.date_added DESC";
+        WHERE {$whereSql}
+        ORDER BY a.date_added DESC, a.id DESC
+        LIMIT :limit OFFSET :offset";
 
 $stmt = $conn->prepare($sql);
-$stmt->execute($params);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $per_page, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
 $accessories = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Stats
-$total_items = count($accessories);
-$total_quantity = array_sum(array_column($accessories, 'quantity'));
-$total_value = array_sum(array_map(function($a) {
-    return $a['price'] ? $a['quantity'] * $a['price'] : 0;
-}, $accessories));
+// Available filter options, independent of the current page.
+$optionWhere = ["status = 'instock'"];
+$optionParams = [];
+if ($role === 'manager' && !empty($user_branch)) {
+    $optionWhere[] = "branch = :option_user_branch";
+    $optionParams['option_user_branch'] = $user_branch;
+}
+$optionWhereSql = implode(" AND ", $optionWhere);
 
-// Unique branches and places for filters
-$branches = array_unique(array_column($accessories, 'branch'));
-$places = array_unique(array_column($accessories, 'place'));
+$typeStmt = $conn->prepare("
+    SELECT DISTINCT type
+    FROM accessories
+    WHERE {$optionWhereSql}
+      AND type IS NOT NULL
+      AND TRIM(type) <> ''
+    ORDER BY type
+");
+$typeStmt->execute($optionParams);
+$types = $typeStmt->fetchAll(PDO::FETCH_COLUMN);
+
+$branchStmt = $conn->prepare("
+    SELECT DISTINCT branch
+    FROM accessories
+    WHERE {$optionWhereSql}
+      AND branch IS NOT NULL
+      AND TRIM(branch) <> ''
+    ORDER BY branch
+");
+$branchStmt->execute($optionParams);
+$branches = $branchStmt->fetchAll(PDO::FETCH_COLUMN);
+
+$placeStmt = $conn->prepare("
+    SELECT DISTINCT place
+    FROM accessories
+    WHERE {$optionWhereSql}
+      AND place IS NOT NULL
+      AND TRIM(place) <> ''
+    ORDER BY place
+");
+$placeStmt->execute($optionParams);
+$places = $placeStmt->fetchAll(PDO::FETCH_COLUMN);
+
+function accessoryPageUrl(int $pageNumber): string {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
+}
+
 
 ?>
 
@@ -342,6 +421,14 @@ $places = array_unique(array_column($accessories, 'place'));
             border-top: 1px solid var(--gray-200);
         }
 
+        .pagination-bar{display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap;padding:1rem 1.25rem;border-top:1px solid var(--gray-200);background:#fff}
+        .pagination-controls{display:flex;align-items:center;gap:.4rem;flex-wrap:wrap}
+        .pagination-controls a,.pagination-controls span{padding:.45rem .7rem;border:1px solid var(--gray-300);border-radius:var(--radius-md);text-decoration:none;color:var(--gray-600);background:#fff;font-size:.85rem}
+        .pagination-controls .active{background:var(--primary);color:#fff;border-color:var(--primary)}
+        .pagination-controls .disabled{opacity:.45;pointer-events:none}
+        .per-page-form{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--gray-600)}
+        .per-page-form select{padding:.45rem .65rem;border:1px solid var(--gray-300);border-radius:var(--radius-md);background:#fff}
+
         @media (max-width: 1200px) {
             .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; }
         }
@@ -416,6 +503,20 @@ $places = array_unique(array_column($accessories, 'place'));
     <div class="search-section">
         <div class="search-title"><i class="fas fa-filter"></i> Filter Accessories</div>
         <form method="GET" class="search-grid">
+            <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
+
+            <div class="search-group">
+                <label>Accessory Type</label>
+                <select name="type">
+                    <option value="">-- All Types --</option>
+                    <?php foreach ($types as $type): ?>
+                        <option value="<?= htmlspecialchars((string)$type) ?>" <?= $search_type === (string)$type ? 'selected' : '' ?>>
+                            <?= htmlspecialchars((string)$type) ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
             <div class="search-group">
                 <label>Accessory Name</label>
                 <input type="text" name="name" placeholder="Search by name..." value="<?= htmlspecialchars($search_name) ?>" autofocus>
@@ -426,8 +527,11 @@ $places = array_unique(array_column($accessories, 'place'));
                 <label>Branch</label>
                 <select name="branch">
                     <option value="">-- All Branches --</option>
-                    <option value="KIMATHI" <?= $search_branch == 'KIMATHI' ? 'selected' : '' ?>>KIMATHI</option>
-                    <option value="MOI" <?= $search_branch == 'MOI' ? 'selected' : '' ?>>MOI</option>
+                    <?php foreach ($branches as $branchOption): ?>
+                        <option value="<?= htmlspecialchars((string)$branchOption) ?>" <?= $search_branch === (string)$branchOption ? 'selected' : '' ?>>
+                            <?= htmlspecialchars((string)$branchOption) ?>
+                        </option>
+                    <?php endforeach; ?>
                 </select>
             </div>
             <?php endif; ?>
@@ -436,9 +540,11 @@ $places = array_unique(array_column($accessories, 'place'));
                 <label>Place</label>
                 <select name="place">
                     <option value="">-- All Places --</option>
-                    <option value="display" <?= $search_place == 'display' ? 'selected' : '' ?>>Display</option>
-                    <option value="store" <?= $search_place == 'store' ? 'selected' : '' ?>>Store</option>
-                    <option value="warehouse" <?= $search_place == 'warehouse' ? 'selected' : '' ?>>Warehouse</option>
+                    <?php foreach ($places as $placeOption): ?>
+                        <option value="<?= htmlspecialchars((string)$placeOption) ?>" <?= $search_place === (string)$placeOption ? 'selected' : '' ?>>
+                            <?= htmlspecialchars(ucfirst((string)$placeOption)) ?>
+                        </option>
+                    <?php endforeach; ?>
                 </select>
             </div>
 
@@ -465,6 +571,7 @@ $places = array_unique(array_column($accessories, 'place'));
                     <thead>
                         <tr>
                             <th>#</th>
+                            <th>Accessory Type</th>
                             <th>Name</th>
                             <th>Quantity</th>
                             <th>Branch</th>
@@ -483,9 +590,10 @@ $places = array_unique(array_column($accessories, 'place'));
                         </tr>
                     </thead>
                     <tbody>
-                        <?php $i = 1; foreach ($accessories as $a): ?>
+                        <?php $i = $offset + 1; foreach ($accessories as $a): ?>
                             <tr>
                                 <td><?= $i++ ?></td>
+                                <td><strong><?= htmlspecialchars($a['type'] ?? 'N/A') ?></strong></td>
                                 <td><strong><?= htmlspecialchars($a['name']) ?></strong></td>
                                 <td><span class="badge"><?= (int)$a['quantity'] ?></span></td>
                                 <td>
@@ -523,6 +631,51 @@ $places = array_unique(array_column($accessories, 'place'));
                 </table>
             <?php endif; ?>
         </div>
+
+        <?php if ($total_items > 0): ?>
+        <div class="pagination-bar">
+            <form method="GET" class="per-page-form">
+                <?php foreach ($_GET as $key => $value): ?>
+                    <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                        <input type="hidden" name="<?= htmlspecialchars((string)$key) ?>" value="<?= htmlspecialchars((string)$value) ?>">
+                    <?php endif; ?>
+                <?php endforeach; ?>
+                <label for="accessoryPerPage">Show</label>
+                <select id="accessoryPerPage" name="per_page" onchange="this.form.submit()">
+                    <?php foreach ($allowed_per_page as $size): ?>
+                        <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <span>per page</span>
+            </form>
+
+            <div class="pagination-controls">
+                <?php if ($page > 1): ?>
+                    <a href="<?= htmlspecialchars(accessoryPageUrl($page - 1)) ?>">Previous</a>
+                <?php else: ?>
+                    <span class="disabled">Previous</span>
+                <?php endif; ?>
+
+                <?php
+                $startPage = max(1, $page - 2);
+                $endPage = min($total_pages, $page + 2);
+                for ($p = $startPage; $p <= $endPage; $p++):
+                ?>
+                    <?php if ($p === $page): ?>
+                        <span class="active"><?= $p ?></span>
+                    <?php else: ?>
+                        <a href="<?= htmlspecialchars(accessoryPageUrl($p)) ?>"><?= $p ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+
+                <?php if ($page < $total_pages): ?>
+                    <a href="<?= htmlspecialchars(accessoryPageUrl($page + 1)) ?>">Next</a>
+                <?php else: ?>
+                    <span class="disabled">Next</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 
     <div class="footer">

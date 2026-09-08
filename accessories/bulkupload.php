@@ -40,8 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
             }, $rows[0]);
             unset($rows[0]);
 
-            // Required: accessory_name, quantity
-            $requiredColumns = ['accessory_name', 'quantity'];
+            // Required: type, accessory_name, quantity
+            $requiredColumns = ['type', 'accessory_name', 'quantity'];
             $missingColumns = array_diff($requiredColumns, $header);
             if (!empty($missingColumns)) {
                 $error = "Missing required columns: " . implode(', ', $missingColumns);
@@ -62,7 +62,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                     $rowNumber = $rowIndex + 2; // because header is row 1
 
                     // Extract values
-                    $accessory_name = trim($data['accessory_name'] ?? '');
+                    $accessory_type = trim((string)($data['type'] ?? ''));
+                    $accessory_name = trim((string)($data['accessory_name'] ?? ''));
                     $quantity = isset($data['quantity']) ? (int)$data['quantity'] : 0;
 
                     // Place: default 'display'
@@ -86,7 +87,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                     // Validation
                     $rowErrors = [];
 
-                    if (empty($accessory_name)) {
+                    if ($accessory_type === '') {
+                        $rowErrors[] = "Accessory type is required.";
+                    }
+                    if ($accessory_name === '') {
                         $rowErrors[] = "Accessory name is required.";
                     }
                     if ($quantity <= 0) {
@@ -109,12 +113,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                         continue;
                     }
 
-                    // Check if accessory with same name, branch, and place already exists (status = instock)
+                    // Check if accessory with same type, name, branch, and place already exists (status = instock)
                     $checkStmt = $conn->prepare("
-                        SELECT id, quantity FROM accessories 
-                        WHERE name = :name AND branch = :branch AND place = :place AND status = 'instock'
+                        SELECT id, quantity FROM accessories
+                        WHERE type = :type
+                          AND name = :name
+                          AND branch = :branch
+                          AND place = :place
+                          AND status = 'instock'
                     ");
                     $checkStmt->execute([
+                        'type' => $accessory_type,
                         'name' => $accessory_name,
                         'branch' => $branch,
                         'place' => $place
@@ -135,15 +144,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                             'id' => $existing['id']
                         ]);
                         $updatedCount++;
-                        $actionLog[] = "Updated '$accessory_name' (branch $branch, place $place): quantity increased from {$existing['quantity']} to $newQuantity.";
+                        $actionLog[] = "Updated '$accessory_type - $accessory_name' (branch $branch, place $place): quantity increased from {$existing['quantity']} to $newQuantity.";
                     } else {
                         // Insert new accessory
                         $insertStmt = $conn->prepare("
-                            INSERT INTO accessories 
-                            (name, quantity, place, branch, price, added_by, status, date_added, updated_by, updated_at)
-                            VALUES (:name, :qty, :place, :branch, :price, :added_by, 'instock', NOW(), :updated_by, NOW())
+                            INSERT INTO accessories
+                            (type, name, quantity, place, branch, price, added_by, status, date_added, updated_by, updated_at)
+                            VALUES (:type, :name, :qty, :place, :branch, :price, :added_by, 'instock', NOW(), :updated_by, NOW())
                         ");
                         $insertStmt->execute([
+                            'type' => $accessory_type,
                             'name' => $accessory_name,
                             'qty' => $quantity,
                             'place' => $place,
@@ -153,7 +163,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                             'updated_by' => $added_by
                         ]);
                         $insertedCount++;
-                        $actionLog[] = "Inserted new accessory '$accessory_name' (branch $branch, place $place) with quantity $quantity.";
+                        $actionLog[] = "Inserted new accessory '$accessory_type - $accessory_name' (branch $branch, place $place) with quantity $quantity.";
                     }
 
                     // Log activity in activity_logs (one log per row)
@@ -163,7 +173,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                     ");
                     $logStmt->execute([
                         'uid' => $added_by,
-                        'details' => $existing ? "Updated accessory '$accessory_name' (branch $branch, place $place) – quantity increased by $quantity." : "Added accessory '$accessory_name' (branch $branch, place $place) – quantity $quantity, price " . ($price ?? 'NULL')
+                        'details' => $existing ? "Updated accessory '$accessory_type - $accessory_name' (branch $branch, place $place) – quantity increased by $quantity." : "Added accessory '$accessory_type - $accessory_name' (branch $branch, place $place) – quantity $quantity, price " . ($price ?? 'NULL')
                     ]);
                 }
 
@@ -439,6 +449,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                         <tr><th>Column Name</th><th>Required</th><th>Description</th><th>Valid Values</th></tr>
                     </thead>
                     <tbody>
+                        <tr><td>type</td><td class="required">Required</td><td>Accessory type/category</td><td>Text</td></tr>
                         <tr><td>accessory_name</td><td class="required">Required</td><td>Name of the accessory</td><td>Text</td></tr>
                         <tr><td>quantity</td><td class="required">Required</td><td>Number of units</td><td>Positive integer</td></tr>
                         <tr><td>place</td><td class="optional">Optional (default: display)</td><td>Location</td><td>display, store, warehouse</td></tr>
@@ -447,18 +458,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                     </tbody>
                 </table>
                 <p style="margin-top: 0.75rem; font-size: 0.85rem; color: var(--gray-600);">
-                    <i class="fas fa-sync-alt"></i> If an accessory with the same <strong>name</strong>, <strong>branch</strong>, and <strong>place</strong> already exists and is <strong>in stock</strong>, the quantity will be <strong>increased</strong> instead of creating a duplicate.
+                    <i class="fas fa-sync-alt"></i> If an accessory with the same <strong>type</strong>, <strong>name</strong>, <strong>branch</strong>, and <strong>place</strong> already exists and is <strong>in stock</strong>, the quantity will be <strong>increased</strong> instead of creating a duplicate.
                 </p>
             </div>
 
             <div class="info-box">
                 <h3><i class="fas fa-file-alt"></i> Sample Excel Template</h3>
                 <div class="template-example">
-                    accessory_name | quantity | place | branch | price<br>
-                    ---------------------------------------------------------<br>
-                    DELL optical mouse | 10 | display | MOI | 1000<br>
-                    HP Keyboard | 5 | store | KIMATHI | 800<br>
-                    USB-C Adapter | 3 | warehouse | (empty) | 1200
+                    type | accessory_name | quantity | place | branch | price<br>
+                    ------------------------------------------------------------------------<br>
+                    Mouse | DELL optical mouse | 10 | display | MOI | 1000<br>
+                    Keyboard | HP Keyboard | 5 | store | KIMATHI | 800<br>
+                    Adapter | USB-C Adapter | 3 | warehouse | (empty) | 1200
                 </div>
                 <p style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--gray-500);">
                     <i class="fas fa-download"></i> 
@@ -500,10 +511,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Download template
     document.getElementById('downloadTemplate').addEventListener('click', function(e) {
         e.preventDefault();
-        const csvContent = "accessory_name,quantity,place,branch,price\n" +
-                           "DELL optical mouse,10,display,MOI,1000\n" +
-                           "HP Keyboard,5,store,KIMATHI,800\n" +
-                           "USB-C Adapter,3,warehouse,,1200";
+        const csvContent = "type,accessory_name,quantity,place,branch,price\n" +
+                           "Mouse,DELL optical mouse,10,display,MOI,1000\n" +
+                           "Keyboard,HP Keyboard,5,store,KIMATHI,800\n" +
+                           "Adapter,USB-C Adapter,3,warehouse,,1200";
         const blob = new Blob([csvContent], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
