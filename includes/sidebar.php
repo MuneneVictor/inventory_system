@@ -392,6 +392,17 @@ $allowedEmails = [
                 ];
             }
 
+            //Returns
+            if (in_array($role, ['super_admin','inventory_admin', 'cashier'])) {
+                $sections['RETURNS'] = [
+                    'icon' => 'fas fa-undo-alt',
+                    'items' => [
+                        ['Make Return', '../returns/index', 'fas fa-undo-alt'],
+                        ['Return Logs', '../returns/return_logs', 'fas fa-clipboard-list'],
+                    ]
+                ];
+            }
+
             // Logs
             if (in_array($role, ['super_admin','manager'])) {
                 $log_items = [];
