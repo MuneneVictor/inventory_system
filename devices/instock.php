@@ -303,6 +303,12 @@ $whereSql = implode(' AND ', $where);
 $countStmt = $conn->prepare("SELECT COUNT(*) FROM devices d WHERE $whereSql");
 $countStmt->execute($params);
 $total_devices = (int)$countStmt->fetchColumn();
+
+// Total stock value for all matching in-stock devices, using the devices.price column.
+$valueStmt = $conn->prepare("SELECT COALESCE(SUM(d.price), 0) FROM devices d WHERE $whereSql");
+$valueStmt->execute($params);
+$total_stock_value = (float)$valueStmt->fetchColumn();
+
 $totalPages = max(1, (int)ceil($total_devices / $perPage));
 if ($page > $totalPages) {
     $page = $totalPages;
@@ -596,6 +602,10 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <div class="stat-card">
             <div class="stat-value"><?= number_format(count($branches_list)) ?></div>
             <div class="stat-label">Branches</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">KES <?= number_format($total_stock_value, 2) ?></div>
+            <div class="stat-label">Total Stock Value</div>
         </div>
     </div>
 
