@@ -1,564 +1,302 @@
 <?php
 session_start();
-
 require_once "../config/db.php";
 require_once "../includes/auth_check.php";
-require_once "../vendor/autoload.php";
 
-use PhpOffice\PhpSpreadsheet\IOFactory;
-use PhpOffice\PhpSpreadsheet\Spreadsheet;
-use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
-use PhpOffice\PhpSpreadsheet\Style\Fill;
-use PhpOffice\PhpSpreadsheet\Style\Border;
-use PhpOffice\PhpSpreadsheet\Style\Alignment;
-use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
-
-if (!in_array($_SESSION['role'] ?? '', ['super_admin', 'inventory_admin', 'manager'], true)) {
+if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin', 'manager'])) {
     die("ACCESS DENIED.");
 }
 
-$user_id = (int)($_SESSION['user_id'] ?? 0);
-$user_role = (string)($_SESSION['role'] ?? '');
+$user_id = (int) $_SESSION['user_id'];
+$user_role = $_SESSION['role'];
 
-$stmt = $conn->prepare("SELECT branch FROM users WHERE id = ? LIMIT 1");
-$stmt->execute([$user_id]);
-$current_user = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
-$user_branch = $current_user['branch'] ?? null;
-
-if (!$user_branch) {
-    die("Your account has no branch assigned.");
+$user_branch = null;
+if ($user_role !== 'super_admin') {
+    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
+    $stmt->execute([$user_id]);
+    $user_branch = $stmt->fetchColumn();
+    if (!$user_branch) die("Your account has no branch assigned.");
 }
 
-// Read the real database definition for size_inches.
-// Blank Excel sizes can only be omitted safely when the column allows NULL
-// or has a database default.
-$sizeColStmt = $conn->query("
-    SELECT IS_NULLABLE, COLUMN_DEFAULT
-    FROM INFORMATION_SCHEMA.COLUMNS
-    WHERE TABLE_SCHEMA = DATABASE()
-      AND TABLE_NAME = 'monitors'
-      AND COLUMN_NAME = 'size_inches'
-    LIMIT 1
-");
-$sizeColumn = $sizeColStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-$sizeAllowsNull = strtoupper((string)($sizeColumn['IS_NULLABLE'] ?? 'NO')) === 'YES';
-$sizeHasDefault = array_key_exists('COLUMN_DEFAULT', $sizeColumn) && $sizeColumn['COLUMN_DEFAULT'] !== null;
+$filter_serial = $_GET['serial'] ?? '';
+$filter_branch = $_GET['branch'] ?? '';
 
-$error = '';
-$success = '';
-$skippedSerials = [];
-$rowErrors = [];
+// Pagination only: default 50, selectable up to 200.
+$allowed_per_page = [50, 100, 150, 200];
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 50;
+if (!in_array($per_page, $allowed_per_page, true)) {
+    $per_page = 50;
+}
+$page = max(1, (int)($_GET['page'] ?? 1));
 
-function monCleanHeader($value): string {
-    return strtolower(trim(preg_replace('/\s+/', ' ', (string)$value)));
+$where = ["m.status = 'In Stock'"];
+$params = [];
+
+if ($user_role !== 'super_admin') {
+    $where[] = "m.branch = :user_branch";
+    $params['user_branch'] = $user_branch;
+}
+if (!empty($filter_serial)) {
+    $where[] = "m.serial_number LIKE :serial";
+    $params['serial'] = "%{$filter_serial}%";
+}
+if ($user_role === 'super_admin' && !empty($filter_branch)) {
+    $where[] = "m.branch = :branch";
+    $params['branch'] = $filter_branch;
 }
 
-function monStatus($value): ?string {
-    $raw = strtolower(trim((string)$value));
+$whereSql = implode(" AND ", $where);
 
-    if ($raw === '' || $raw === '-') {
-        return 'In Stock';
-    }
+// Lightweight count first so we do not load all monitor rows.
+$countStmt = $conn->prepare("SELECT COUNT(*) FROM monitors m WHERE {$whereSql}");
+$countStmt->execute($params);
+$total_monitors = (int)$countStmt->fetchColumn();
 
-    $key = preg_replace('/[^a-z]/', '', $raw);
+$valueStmt = $conn->prepare("SELECT COALESCE(SUM(m.price), 0) FROM monitors m WHERE {$whereSql}");
+$valueStmt->execute($params);
+$total_stock_value = (float)$valueStmt->fetchColumn();
 
-    if ($key === 'sold') {
-        return 'Sold';
-    }
+$total_pages = max(1, (int)ceil($total_monitors / $per_page));
+if ($page > $total_pages) {
+    $page = $total_pages;
+}
+$offset = ($page - 1) * $per_page;
 
-    if (in_array($key, ['instock', 'stock', 'available'], true)) {
-        return 'In Stock';
-    }
+// Load only the rows needed for the current page.
+$sql = "SELECT m.serial_number, m.model_name, m.size_inches, m.price, m.branch, m.date_added, u.full_name AS added_by
+        FROM monitors m
+        JOIN users u ON m.added_by = u.id
+        WHERE {$whereSql}
+        ORDER BY m.date_added DESC
+        LIMIT :limit OFFSET :offset";
 
-    return null;
+$stmt = $conn->prepare($sql);
+foreach ($params as $key => $value) {
+    $stmt->bindValue(':' . $key, $value);
+}
+$stmt->bindValue(':limit', $per_page, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
+$monitors = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+function monitorPageUrl(int $pageNumber): string {
+    $query = $_GET;
+    $query['page'] = $pageNumber;
+    return '?' . http_build_query($query);
 }
 
-/*
- * Normal monitor template only.
- */
-if (($_GET['download_template'] ?? '') === 'normal') {
-    $book = new Spreadsheet();
-    $sheet = $book->getActiveSheet();
-    $sheet->setTitle('Normal Monitors');
-
-    $headers = ['serial_number', 'model_name', 'size_inches', 'price'];
-    $sample = ['SN001', 'Dell P2419H', 24, 12000];
-
-    foreach ($headers as $i => $header) {
-        $col = Coordinate::stringFromColumnIndex($i + 1);
-        $sheet->setCellValue($col . '1', $header);
-        $sheet->setCellValue($col . '2', $sample[$i]);
-        $sheet->getColumnDimension($col)->setAutoSize(true);
-    }
-
-    $last = Coordinate::stringFromColumnIndex(count($headers));
-
-    $sheet->getStyle('A1:' . $last . '1')->applyFromArray([
-        'font' => [
-            'bold' => true,
-            'color' => ['rgb' => '111827']
-        ],
-        'fill' => [
-            'fillType' => Fill::FILL_SOLID,
-            'startColor' => ['rgb' => 'EABF30']
-        ],
-        'alignment' => [
-            'horizontal' => Alignment::HORIZONTAL_CENTER
-        ],
-        'borders' => [
-            'allBorders' => [
-                'borderStyle' => Border::BORDER_THIN
-            ]
-        ],
-    ]);
-
-    $sheet->freezePane('A2');
-    $sheet->setAutoFilter('A1:' . $last . '1');
-
-    while (ob_get_level()) {
-        ob_end_clean();
-    }
-
-    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-    header('Content-Disposition: attachment; filename="monitor_normal_upload_template.xlsx"');
-    header('Cache-Control: max-age=0, no-store, no-cache, must-revalidate');
-
-    (new Xlsx($book))->save('php://output');
-    exit;
-}
-
-if (isset($_GET['download_template']) && $_GET['download_template'] !== 'normal') {
-    http_response_code(400);
-    exit('Invalid monitor template.');
-}
-
-/*
- * Normal monitor upload only.
- */
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
-    if ($_FILES['file']['error'] !== UPLOAD_ERR_OK) {
-        $error = 'Please upload a valid file.';
-    } else {
-        $extension = strtolower(pathinfo($_FILES['file']['name'], PATHINFO_EXTENSION));
-
-        if (!in_array($extension, ['xlsx', 'xls', 'csv'], true)) {
-            $error = 'Invalid file type. Please upload .xlsx, .xls or .csv.';
-        }
-    }
-
-    $batchBranch = strtoupper((string)$user_branch);
-
-    if (!$error) {
-        try {
-            $book = IOFactory::load($_FILES['file']['tmp_name']);
-            $rows = $book->getActiveSheet()->toArray(null, true, true, false);
-
-            if (!$rows) {
-                throw new Exception('The uploaded spreadsheet is empty.');
-            }
-
-            $headers = array_map('monCleanHeader', array_shift($rows));
-
-            // Excel/PhpSpreadsheet can return extra blank cells at the end of a header row.
-            // Remove trailing blanks so a visually correct template is not rejected.
-            while ($headers && end($headers) === '') {
-                array_pop($headers);
-            }
-
-            $requiredHeaders = ['serial_number', 'model_name', 'size_inches'];
-            $allowedHeaders3 = $requiredHeaders;
-            $allowedHeaders4 = ['serial_number', 'model_name', 'size_inches', 'price'];
-
-            if ($headers !== $allowedHeaders3 && $headers !== $allowedHeaders4) {
-                throw new Exception(
-                    'Monitor header must be: serial_number, model_name, size_inches with optional price as the 4th column'
-                );
-            }
-
-            $hasPriceColumn = isset($headers[3]) && $headers[3] === 'price';
-
-            $check = $conn->prepare("
-                SELECT serial_number
-                FROM monitors
-                WHERE serial_number = ?
-                LIMIT 1
-            ");
-
-            $count = 0;
-            $duplicates = 0;
-            $invalid = 0;
-
-            foreach ($rows as $index => $row) {
-                $rowNumber = $index + 2;
-
-                if (!array_filter($row, fn($value) => trim((string)$value) !== '')) {
-                    continue;
-                }
-
-                $serial = trim((string)($row[0] ?? ''));
-                $model = trim((string)($row[1] ?? ''));
-                $size = trim((string)($row[2] ?? ''));
-                $price = $hasPriceColumn ? trim((string)($row[3] ?? '')) : '';
-
-                $errors = [];
-
-                if ($serial === '') {
-                    $errors[] = 'Serial number is required.';
-                }
-
-                if ($model === '') {
-                    $errors[] = 'Model name is required.';
-                }
-
-                if ($size !== '' && (!is_numeric($size) || (float)$size <= 0 || (float)$size > 100)) {
-                    $errors[] = 'Size must be numeric between 1 and 100 when provided.';
-                }
-
-                if ($price !== '' && $price !== '-' && (!is_numeric($price) || (float)$price < 0)) {
-                    $errors[] = 'Price must be a valid non-negative number when provided.';
-                }
-
-                if ($serial !== '') {
-                    $check->execute([$serial]);
-
-                    if ($check->fetchColumn()) {
-                        $duplicates++;
-                        $skippedSerials[] = $serial;
-                        continue;
-                    }
-                }
-
-                if ($errors) {
-                    $invalid++;
-                    $rowErrors[] =
-                        "Row {$rowNumber} (SN: " . ($serial ?: 'N/A') . '): ' .
-                        implode(' ', $errors);
-                    continue;
-                }
-
-                $columns = ['serial_number', 'model_name', 'branch', 'added_by'];
-                $values = [':serial_number', ':model_name', ':branch', ':added_by'];
-                $params = [
-                    'serial_number' => $serial,
-                    'model_name' => $model,
-                    'branch' => $batchBranch,
-                    'added_by' => $user_id
-                ];
-
-                // size_inches is optional in Excel.
-                // If provided, save it. If blank, omit it so MySQL uses NULL/default.
-                if ($size !== '') {
-                    $columns[] = 'size_inches';
-                    $values[] = ':size_inches';
-                    $params['size_inches'] = (float)$size;
-                } elseif (!$sizeAllowsNull && !$sizeHasDefault) {
-                    $invalid++;
-                    $rowErrors[] =
-                        "Row {$rowNumber} (SN: " . ($serial ?: 'N/A') . "): " .
-                        "size_inches is blank, but monitors.size_inches is still NOT NULL with no default. " .
-                        "Change that database column to allow NULL before uploading blank sizes.";
-                    continue;
-                }
-
-                // price is optional. If the column is absent, blank, or '-', leave it out so NULL/default is used.
-                if ($price !== '' && $price !== '-') {
-                    $columns[] = 'price';
-                    $values[] = ':price';
-                    $params['price'] = round((float)$price, 2);
-                }
-
-                // Other fields not supplied by this Excel format use their database defaults.
-                $insert = $conn->prepare(
-                    "INSERT INTO monitors (" . implode(', ', $columns) . ")
-                     VALUES (" . implode(', ', $values) . ")"
-                );
-                $insert->execute($params);
-
-                $count++;
-            }
-
-            if ($count > 0) {
-                $log = $conn->prepare("
-                    INSERT INTO activity_logs (user_id, action, details)
-                    VALUES (?, 'Bulk upload monitors', ?)
-                ");
-
-                $log->execute([
-                    $user_id,
-                    "Uploaded {$count} monitors via normal monitor bulk upload. Branch used from logged-in account: {$batchBranch}"
-                ]);
-            }
-
-            $success = "{$count} monitor(s) uploaded successfully.";
-
-            if ($duplicates > 0) {
-                $success .= " {$duplicates} duplicate serial(s) skipped.";
-            }
-
-            if ($invalid > 0) {
-                $success .= " {$invalid} invalid row(s) skipped.";
-            }
-        } catch (Throwable $e) {
-            $error = 'File processing error: ' . $e->getMessage();
-        }
-    }
-}
+date_default_timezone_set('Africa/Nairobi');
+$hour = date('G');
+if ($hour < 12) $greeting = 'Good morning';
+elseif ($hour < 17) $greeting = 'Good afternoon';
+else $greeting = 'Good evening';
+$user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 ?>
-<!doctype html>
+
+<!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Bulk Upload Monitors | Mombasa Computers</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>In‑Stock Monitors | Mombasa Computers</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        :root {
+            --primary: #1a4b2a;
+            --primary-light: #2a6b3a;
+            --primary-dark: #0f3a1e;
+            --info: #2563eb;
+            --gray-50: #f9fafb;
+            --gray-100: #f3f4f6;
+            --gray-200: #e5e7eb;
+            --gray-300: #d1d5db;
+            --gray-400: #9ca3af;
+            --gray-500: #6b7280;
+            --gray-600: #4b5563;
+            --gray-700: #374151;
+            --gray-800: #1f2937;
+            --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+            --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+            --radius-sm: 0.375rem;
+            --radius-md: 0.5rem;
+            --radius-lg: 0.75rem;
+            --radius-xl: 1rem;
+            --font-sans: 'Inter', system-ui, sans-serif;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: var(--font-sans); background: var(--gray-100); color: var(--gray-800); line-height: 1.5; overflow-x: hidden; }
+        .main-content { padding: 2rem 2rem 1rem; margin-left: 260px; width: calc(100% - 260px); min-height: 100vh; background: var(--gray-100); transition: all 0.3s ease; }
+        .page-header { background: white; padding: 1.5rem 2rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; box-shadow: var(--shadow-sm); border: 1px solid var(--gray-200); }
+        .page-header h1 { font-size: 1.75rem; color: var(--gray-800); font-weight: 600; margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.75rem; }
+        .page-header h1 i { color: var(--primary); font-size: 1.75rem; }
+        .breadcrumb { color: var(--gray-500); font-size: 0.9rem; }
+        .breadcrumb a { color: var(--primary); text-decoration: none; }
+        .stats-row { display: flex; gap: 1rem; margin-bottom: 1.5rem; flex-wrap: wrap; }
+        .stat-card { background: white; padding: 1rem 1.5rem; border-radius: var(--radius-lg); border: 1px solid var(--gray-200); box-shadow: var(--shadow-sm); flex: 1; min-width: 150px; }
+        .stat-card .stat-value { font-size: 1.75rem; font-weight: 700; color: var(--primary); }
+        .stat-card .stat-label { font-size: 0.8rem; color: var(--gray-500); }
+        .filter-form { background: white; padding: 1.25rem; border-radius: var(--radius-xl); margin-bottom: 1.5rem; border: 1px solid var(--gray-200); display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+        .filter-group { flex: 1; min-width: 180px; }
+        .filter-group label { display: block; font-size: 0.75rem; font-weight: 500; color: var(--gray-600); margin-bottom: 0.25rem; }
+        .filter-group input, .filter-group select { width: 100%; padding: 0.6rem 0.75rem; border: 1px solid var(--gray-300); border-radius: var(--radius-md); font-size: 0.85rem; }
+        .btn { padding: 0.6rem 1.2rem; background: var(--primary); color: white; border: none; border-radius: var(--radius-md); cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 500; text-decoration: none; }
+        .btn-secondary { background: var(--gray-500); }
+        .btn-view { background: var(--info); color: white; padding: 0.4rem 1rem; border-radius: var(--radius-md); font-size: 0.8rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; transition: background 0.2s; }
+        .btn-view:hover { background: #1d4ed8; }
+        .table-wrapper { background: white; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; min-width: 700px; }
+        th { background: var(--gray-50); padding: 1rem; text-align: left; font-weight: 600; color: var(--gray-600); border-bottom: 1px solid var(--gray-200); white-space: nowrap; }
+        td { padding: 0.9rem 1rem; border-bottom: 1px solid var(--gray-100); vertical-align: middle; }
+        .badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.7rem; font-weight: 500; background: var(--gray-100); }
+        .branch-kimathi { color: #059669; font-weight: 500; }
+        .branch-moi { color: #3b82f6; font-weight: 500; }
+        .empty-state { text-align: center; padding: 3rem; color: var(--gray-500); }
+        .footer { text-align: center; padding: 1.5rem 0 0.5rem; margin-top: 1.5rem; font-size: 0.85rem; color: var(--gray-400); border-top: 1px solid var(--gray-200); }
+        .pagination-bar { display:flex; justify-content:space-between; align-items:center; gap:1rem; flex-wrap:wrap; padding:1rem 1.25rem; border-top:1px solid var(--gray-200); background:white; }
+        .pagination-controls { display:flex; align-items:center; gap:.4rem; flex-wrap:wrap; }
+        .pagination-controls a, .pagination-controls span { padding:.45rem .7rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); text-decoration:none; color:var(--gray-600); background:white; font-size:.85rem; }
+        .pagination-controls .active { background:var(--primary); color:white; border-color:var(--primary); }
+        .pagination-controls .disabled { opacity:.45; pointer-events:none; }
+        .per-page-form { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--gray-600); }
+        .per-page-form select { padding:.45rem .65rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); background:white; }
 
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-
-<style>
-:root{
-    --p:#1a4b2a;
-    --bg:#f3f4f6;
-    --b:#e5e7eb;
-    --t:#1f2937;
-    --m:#6b7280;
-}
-*{box-sizing:border-box}
-body{
-    margin:0;
-    font-family:Inter,system-ui,sans-serif;
-    background:var(--bg);
-    color:var(--t)
-}
-.main{
-    margin-left:260px;
-    padding:2rem;
-    min-height:100vh
-}
-.box{
-    background:#fff;
-    border:1px solid var(--b);
-    border-radius:14px;
-    padding:1.4rem;
-    margin-bottom:1rem
-}
-.alert{
-    padding:1rem;
-    border-radius:9px;
-    margin-bottom:1rem
-}
-.ok{background:#ecfdf5;color:#065f46}
-.err{background:#fef2f2;color:#991b1b}
-.warn{background:#fffbeb;color:#92400e}
-.grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(210px,1fr));
-    gap:1rem
-}
-.g{
-    display:flex;
-    flex-direction:column;
-    gap:.35rem
-}
-.g label{
-    font-weight:650;
-    font-size:.85rem
-}
-.g select,.g input{
-    padding:.7rem;
-    border:1px solid #d1d5db;
-    border-radius:8px
-}
-.btn{
-    display:inline-flex;
-    align-items:center;
-    gap:.4rem;
-    padding:.7rem .9rem;
-    border:0;
-    border-radius:8px;
-    background:var(--p);
-    color:#fff;
-    font-weight:700;
-    cursor:pointer;
-    text-decoration:none
-}
-.full{
-    width:100%;
-    justify-content:center
-}
-.panel{
-    margin-top:1.2rem;
-    padding:1rem;
-    border:1px solid var(--b);
-    border-radius:10px
-}
-.format{
-    overflow:auto;
-    border:1px solid var(--b);
-    border-radius:8px;
-    margin:.8rem 0
-}
-.format table{
-    border-collapse:collapse;
-    table-layout:fixed;
-    min-width:700px;
-    width:100%
-}
-.format th:nth-child(1),.format td:nth-child(1){width:25%}
-.format th:nth-child(2),.format td:nth-child(2){width:25%}
-.format th:nth-child(3),.format td:nth-child(3){width:25%}
-.format th:nth-child(4),.format td:nth-child(4){width:25%}
-.format th,.format td{
-    padding:.72rem .8rem;
-    border-bottom:1px solid var(--b);
-    white-space:nowrap;
-    font-size:.78rem;
-    text-align:center;
-    vertical-align:middle
-}
-.format th{
-    background:#eabf30;
-    color:#111827
-}
-.help{
-    font-size:.83rem;
-    line-height:1.55;
-    color:var(--m)
-}
-@media(max-width:1200px){
-    .main{
-        margin-left:0;
-        padding:5rem 1rem 1rem
-    }
-}
-</style>
+        @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
+        @media (max-width: 768px) { .filter-form { flex-direction: column; } .filter-group { min-width: auto; } .btn, .btn-view { width: 100%; justify-content: center; } }
+    </style>
 </head>
-
 <body>
-
 <?php include "../includes/sidebar.php"; ?>
-
-<main class="main">
-
-<section class="box">
-    <h1><i class="fas fa-desktop"></i> Bulk Upload Monitors</h1>
-    <div class="help">
-       
-    </div>
-</section>
-
-<?php if($success):?>
-<div class="alert ok">
-    <i class="fas fa-check-circle"></i>
-    <?=htmlspecialchars($success)?>
-</div>
-<?php endif;?>
-
-<?php if($error):?>
-<div class="alert err">
-    <i class="fas fa-exclamation-circle"></i>
-    <?=htmlspecialchars($error)?>
-</div>
-<?php endif;?>
-
-<?php if($skippedSerials):?>
-<div class="alert warn">
-    <strong>Duplicate serials:</strong>
-    <?=htmlspecialchars(implode(', ',array_unique($skippedSerials)))?>
-</div>
-<?php endif;?>
-
-<?php if($rowErrors):?>
-<div class="alert warn">
-    <strong>Rows not uploaded:</strong>
-    <ul>
-        <?php foreach($rowErrors as $rowError):?>
-        <li><?=htmlspecialchars($rowError)?></li>
-        <?php endforeach;?>
-    </ul>
-</div>
-<?php endif;?>
-
-<section class="box">
-
-<form method="post" enctype="multipart/form-data">
-
-<div class="grid">
-
-    <div class="g">
-        <label>Branch</label>
-        <input value="<?=htmlspecialchars((string)$user_branch)?>" disabled>
-        <small class="help">Automatically uses your logged-in account branch.</small>
-    </div>
-
-    <div class="g">
-        <label>Excel File</label>
-        <input type="file" name="file" accept=".xlsx,.xls,.csv" required>
-    </div>
-
-</div>
-
-<div class="panel">
-
-    <div style="display:flex;justify-content:space-between;gap:1rem;flex-wrap:wrap">
-        <strong>Normal Monitor Format</strong>
-
-        <a class="btn" href="?download_template=normal">
-            <i class="fas fa-download"></i>
-            Download .xlsx
-        </a>
-    </div>
-
-    <div class="format">
-        <table>
-            <tr>
-                <th>serial_number</th>
-                <th>model_name</th>
-                <th>size_inches</th>
-                <th>price <small>(optional)</small></th>
-            </tr>
-
-            <tr>
-                <td>SN001</td>
-                <td>Dell P2419H</td>
-                <td>24</td>
-                <td>12000</td>
-            </tr>
-        </table>
-    </div>
-
-    <p class="help">
-        <strong>serial_number</strong> and <strong>model_name</strong> are required.
-        <strong>size_inches</strong> is optional; leave it blank when unknown.
-        <strong>price</strong> is also optional; you may omit the price column entirely, or leave individual price cells blank when unknown.
-        Branch is taken automatically from the logged-in user's account.
-        Fields not included in this Excel format, such as Status and Location, use the defaults defined in the monitors table.
-    </p>
-
-    <?php if (!$sizeAllowsNull && !$sizeHasDefault): ?>
-        <div class="alert err" style="margin-top:.8rem;margin-bottom:0;">
-            <i class="fas fa-database"></i>
-            <span>
-                Database check: <strong>monitors.size_inches is still NOT NULL and has no default.</strong>
-                Blank size values cannot be uploaded until that column is changed to allow NULL.
-            </span>
+<div class="main-content">
+    <div class="page-header">
+        <h1><i class="fas fa-box"></i> In‑Stock Monitors</h1>
+        <div class="breadcrumb">
+            <?php if ($user_role === 'super_admin'): ?>
+                <a href="../dashboard/superadmindashboard">Dashboard</a>
+            <?php elseif ($user_role === 'manager'): ?>
+                <a href="../dashboard/managerdashboard">Dashboard</a>
+            <?php else: ?>
+                <a href="../dashboard/inventorydashboard">Dashboard</a>
+            <?php endif; ?>
+            <span> / </span>
+            <span>Monitors In Stock</span>
         </div>
-    <?php else: ?>
-      
-    <?php endif; ?>
+    </div>
 
+    <div class="stats-row">
+        <div class="stat-card"><div class="stat-value"><?= number_format($total_monitors) ?></div><div class="stat-label">Total In Stock</div></div>
+        <div class="stat-card"><div class="stat-value">KES <?= number_format($total_stock_value, 2) ?></div><div class="stat-label">Total Stock Value</div></div>
+        <div class="stat-card"><div class="stat-value"><?= ($user_role === 'super_admin' ? '2' : '1') ?></div><div class="stat-label">Branch(es)</div></div>
+    </div>
+
+    <form method="GET" class="filter-form" id="filterForm">
+        <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
+        <div class="filter-group">
+            <label>Serial Number</label>
+            <input type="text" name="serial" placeholder="Scan or type..." value="<?= htmlspecialchars($filter_serial) ?>" autofocus>
+        </div>
+        <?php if ($user_role === 'super_admin'): ?>
+            <div class="filter-group">
+                <label>Branch</label>
+                <select name="branch">
+                    <option value="">All Branches</option>
+                    <option value="KIMATHI" <?= $filter_branch === 'KIMATHI' ? 'selected' : '' ?>>KIMATHI</option>
+                    <option value="MOI" <?= $filter_branch === 'MOI' ? 'selected' : '' ?>>MOI</option>
+                </select>
+            </div>
+        <?php endif; ?>
+        <div class="filter-group">
+            <button type="submit" class="btn"><i class="fas fa-search"></i> Search</button>
+            <a href="monitors_instock" class="btn btn-secondary" style="background:var(--gray-500); margin-left:0.5rem;">Reset</a>
+        </div>
+    </form>
+
+    <div class="table-wrapper">
+        <div class="table-responsive">
+            <?php if ($monitors): ?>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Serial</th>
+                            <th>Model</th>
+                            <th>Size</th>
+                            <th>Price (KES)</th>
+                            <th>Branch</th>
+                            <th>Added By</th>
+                            <th>Date Added</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    <?php $i=$offset + 1; foreach ($monitors as $m): ?>
+                        <tr>
+                            <td><?= $i++ ?></td>
+                            <td><code><?= htmlspecialchars($m['serial_number']) ?></code></td>
+                            <td><?= htmlspecialchars($m['model_name']) ?></td>
+                            <td><?= $m['size_inches'] ?? '-' ?></td>
+                            <td><?= $m['price'] !== null ? number_format((float)$m['price'], 2) : '—' ?></td>
+                            <td class="<?= $m['branch'] === 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>"><?= htmlspecialchars($m['branch']) ?></td>
+                            <td><?= htmlspecialchars($m['added_by']) ?></td>
+                            <td><?= date('M j, Y', strtotime($m['date_added'])) ?></td>
+                            <td><a href="view_monitor?sn=<?= urlencode($m['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php else: ?>
+                <div class="empty-state"><i class="fas fa-box-open"></i><p>No monitors in stock.</p></div>
+            <?php endif; ?>
+        </div>
+
+        <?php if ($total_monitors > 0): ?>
+        <div class="pagination-bar">
+            <form method="GET" class="per-page-form">
+                <?php foreach ($_GET as $key => $value): ?>
+                    <?php if ($key !== 'per_page' && $key !== 'page' && !is_array($value)): ?>
+                        <input type="hidden" name="<?= htmlspecialchars((string)$key) ?>" value="<?= htmlspecialchars((string)$value) ?>">
+                    <?php endif; ?>
+                <?php endforeach; ?>
+
+                <label for="monitorPerPage">Show</label>
+                <select id="monitorPerPage" name="per_page" onchange="this.form.submit()">
+                    <?php foreach ($allowed_per_page as $size): ?>
+                        <option value="<?= $size ?>" <?= $per_page === $size ? 'selected' : '' ?>><?= $size ?></option>
+                    <?php endforeach; ?>
+                </select>
+                <span>per page</span>
+            </form>
+
+            <div class="pagination-controls">
+                <?php if ($page > 1): ?>
+                    <a href="<?= htmlspecialchars(monitorPageUrl($page - 1)) ?>">Previous</a>
+                <?php else: ?>
+                    <span class="disabled">Previous</span>
+                <?php endif; ?>
+
+                <?php
+                $startPage = max(1, $page - 2);
+                $endPage = min($total_pages, $page + 2);
+                for ($p = $startPage; $p <= $endPage; $p++):
+                ?>
+                    <?php if ($p === $page): ?>
+                        <span class="active"><?= $p ?></span>
+                    <?php else: ?>
+                        <a href="<?= htmlspecialchars(monitorPageUrl($p)) ?>"><?= $p ?></a>
+                    <?php endif; ?>
+                <?php endfor; ?>
+
+                <?php if ($page < $total_pages): ?>
+                    <a href="<?= htmlspecialchars(monitorPageUrl($page + 1)) ?>">Next</a>
+                <?php else: ?>
+                    <span class="disabled">Next</span>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
+    <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
-
-<button class="btn full" type="submit" style="margin-top:1rem">
-    <i class="fas fa-upload"></i>
-    Upload and Process
-</button>
-
-</form>
-
-</section>
-
-</main>
-
 <?php require_once "../includes/footer.php"; ?>
-
 </body>
 </html>
