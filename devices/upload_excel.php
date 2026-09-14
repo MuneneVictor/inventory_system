@@ -154,6 +154,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                     $locationRaw = trim((string)($data['location'] ?? ''));
                     $branchRaw = trim((string)($data['branch'] ?? ''));
                     $placeRaw = trim((string)($data['place'] ?? ''));
+                    $priceRaw = trim((string)($data['price'] ?? ''));
 
                     if ($serial_number==='' && $categoryRaw==='' && $specsRaw==='' && $cargoRaw==='' && $locationRaw==='' && $branchRaw==='' && $placeRaw==='') continue;
 
@@ -364,6 +365,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                         }
                     }
 
+                    // Optional price: if the Excel header/cell is missing or blank, leave devices.price unchanged/NULL.
+                    $price = null;
+                    if ($priceRaw !== '' && $priceRaw !== '-') {
+                        $normalizedPrice = str_replace(',', '', $priceRaw);
+                        if (!is_numeric($normalizedPrice) || (float)$normalizedPrice < 0) {
+                            $rowErrors[] = "Invalid price '$priceRaw'. Use a number, blank or -";
+                        } else {
+                            $price = round((float)$normalizedPrice, 2);
+                        }
+                    }
+
                     $cargo_number = ($cargoRaw === '' || $cargoRaw === '-') ? $cargoDefault : $cargoRaw;
                     $location = ($locationRaw === '' || $locationRaw === '-') ? null : $locationRaw;
 
@@ -402,6 +414,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['excel_file'])) {
                         'location'=>$location,
                         'place'=>$place
                     ];
+
+                    // Optional price: only insert when supplied; otherwise omit the column entirely.
+                    if ($price !== null) {
+                        $columns[] = 'price';
+                        $values[] = ':price';
+                        $params['price'] = $price;
+                    }
 
                     // Optional processor: omit completely when blank/"-" so the database default / NULL is used.
                     if ($processor !== '') {
@@ -883,7 +902,7 @@ $allCategories = $catStmt->fetchAll(PDO::FETCH_COLUMN);
             <div class="info-box">
                 <h3><i class="fas fa-info-circle"></i> Simplified Excel Format</h3>
                 <p style="font-size:0.9rem; color:var(--gray-600); margin-bottom:1rem;">
-                    Your Excel file uses <strong>7 columns</strong> in this order: <strong>serial_number, category, specs, cargo_number, location, branch, place</strong>. This uploader is for normal inventory only.
+                    Your Excel file uses the same <strong>7 required columns</strong> in this order: <strong>serial_number, category, specs, cargo_number, location, branch, place</strong>. You may also add an eighth <strong>price</strong> column. Price is optional, so existing 7-column files are still accepted. This uploader is for normal inventory only.
                 </p>
                 <table>
                     <thead>
@@ -897,6 +916,7 @@ $allCategories = $catStmt->fetchAll(PDO::FETCH_COLUMN);
                         <tr><td><strong>location</strong></td><td class="optional">Optional value</td><td>Blank is stored as NULL</td></tr>
                         <tr><td><strong>branch</strong></td><td class="optional">Optional value</td><td>Blank uses your logged-in branch</td></tr>
                         <tr><td><strong>place</strong></td><td class="optional">Optional value</td><td>Blank is stored as NULL</td></tr>
+                        <tr><td><strong>price</strong></td><td class="optional">Optional column/value</td><td>Device price. The whole column may be omitted; blank or - leaves price as NULL</td></tr>
                     </tbody>
                 </table>
 
@@ -925,6 +945,7 @@ $allCategories = $catStmt->fetchAll(PDO::FETCH_COLUMN);
                         <tr><td><strong>Location</strong></td><td>If blank or <strong>-</strong></td><td>NULL</td></tr>
                         <tr><td><strong>Branch</strong></td><td>If blank or <strong>-</strong></td><td>Your logged-in branch</td></tr>
                         <tr><td><strong>Place</strong></td><td>If blank or <strong>-</strong></td><td>NULL</td></tr>
+                        <tr><td><strong>Price</strong></td><td>If column is omitted, blank or <strong>-</strong></td><td>Not inserted; device price remains NULL/database value</td></tr>
                     </tbody>
                 </table>
                 <p style="font-size:.82rem; color:var(--gray-600); margin-top:1rem;">
@@ -940,16 +961,16 @@ $allCategories = $catStmt->fetchAll(PDO::FETCH_COLUMN);
             <div class="info-box">
                 <h3><i class="fas fa-file-alt"></i> Sample Excel Template</h3>
                 <div class="template-example">
-                    serial_number | category | specs | cargo_number | location | branch | place<br>
+                    serial_number | category | specs | cargo_number | location | branch | place | price <span class="optional">(optional)</span><br>
                     2158514153 | Laptop | MICROSOFT SURFACE PRO 7+ | INTEL CORE i5-11TH GEN | 8GB | 128GB SSD | TOUCH | - | - | CX37 | KIM.DIS.1 | KIMATHI | display<br><br>
-                    HX1PZD3 | Laptop | DELL LATITUDE 7210 2-IN-1 | INTEL CORE i7-10TH GEN | 16GB | 256GB SSD + 1TB HDD | TOUCH | INTEL UHD GRAPHICS | REFURBISHED | C8 | KIM.DIS.1 | KIMATHI | display
+                    HX1PZD3 | Laptop | DELL LATITUDE 7210 2-IN-1 | INTEL CORE i7-10TH GEN | 16GB | 256GB SSD + 1TB HDD | TOUCH | INTEL UHD GRAPHICS | REFURBISHED | C8 | KIM.DIS.1 | KIMATHI | display | 85000
                 </div>
                 <p style="margin-top: 0.75rem; font-size: 0.8rem; color: var(--gray-500);">
                     <i class="fas fa-download"></i>
-                    <a href="#" id="downloadTemplate" style="color: var(--primary); text-decoration: none;">Download 7-Column CSV Template</a>
+                    <a href="#" id="downloadTemplate" style="color: var(--primary); text-decoration: none;">Download CSV Template (Price Optional)</a>
                 </p>
                 <p style="margin-top:.65rem; font-size:.78rem; color:var(--gray-500);">
-                    All seven Excel columns must exist in the header. Cargo Number, Location, Branch and Place may have blank cells. Blank Branch uses your logged-in branch; blank Location and Place are stored as NULL.
+                    The original seven Excel columns must exist in the header. The price column is optional and may be omitted completely. Cargo Number, Location, Branch, Place and Price may have blank cells. Blank Branch uses your logged-in branch; blank Location and Place are stored as NULL; blank Price is not inserted.
                 </p>
             </div>
 
@@ -1004,10 +1025,10 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
 
         const csvContent =
-            'serial_number,category,specs,cargo_number,location,branch,place\n' +
-            '2158514153,Laptop,"MICROSOFT SURFACE PRO 7+ | INTEL CORE i5-11TH GEN | 8GB | 128GB SSD | TOUCH | - | -",CX37,KIM.DIS.1,KIMATHI,display\n' +
-            'HX1PZD3,Laptop,"DELL LATITUDE 7210 2-IN-1 | INTEL CORE i7-10TH GEN | 16GB | 256GB SSD + 1TB HDD | TOUCH | INTEL UHD GRAPHICS | REFURBISHED",C8,KIM.DIS.1,KIMATHI,display\n' +
-            'ABC9012DEF,Laptop,"Dell Latitude 5420 | Core i5 11th Gen | 8GB | 256GB SSD | Non-touch | - | -",,,,store;
+            'serial_number,category,specs,cargo_number,location,branch,place,price\n' +
+            '2158514153,Laptop,"MICROSOFT SURFACE PRO 7+ | INTEL CORE i5-11TH GEN | 8GB | 128GB SSD | TOUCH | - | -",CX37,KIM.DIS.1,KIMATHI,display,85000\n' +
+            'HX1PZD3,Laptop,"DELL LATITUDE 7210 2-IN-1 | INTEL CORE i7-10TH GEN | 16GB | 256GB SSD + 1TB HDD | TOUCH | INTEL UHD GRAPHICS | REFURBISHED",C8,KIM.DIS.1,KIMATHI,display,\n' +
+            'ABC9012DEF,Laptop,"Dell Latitude 5420 | Core i5 11th Gen | 8GB | 256GB SSD | Non-touch | - | -",,,,store,';
 
         const blob = new Blob([csvContent], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);

@@ -81,8 +81,8 @@ if (($_GET['download_template'] ?? '') === 'normal') {
     $sheet = $book->getActiveSheet();
     $sheet->setTitle('Normal Monitors');
 
-    $headers = ['serial_number', 'model_name', 'size_inches'];
-    $sample = ['SN001', 'Dell P2419H', 24];
+    $headers = ['serial_number', 'model_name', 'size_inches', 'price'];
+    $sample = ['SN001', 'Dell P2419H', 24, 12000];
 
     foreach ($headers as $i => $header) {
         $col = Coordinate::stringFromColumnIndex($i + 1);
@@ -159,13 +159,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
 
             $headers = array_map('monCleanHeader', array_shift($rows));
 
-            $expectedHeaders = ['serial_number', 'model_name', 'size_inches'];
+            // Excel/PhpSpreadsheet can return extra blank cells at the end of a header row.
+            // Remove trailing blanks so a visually correct template is not rejected.
+            while ($headers && end($headers) === '') {
+                array_pop($headers);
+            }
 
-            if ($headers !== $expectedHeaders) {
+            $requiredHeaders = ['serial_number', 'model_name', 'size_inches'];
+            $allowedHeaders3 = $requiredHeaders;
+            $allowedHeaders4 = ['serial_number', 'model_name', 'size_inches', 'price'];
+
+            if ($headers !== $allowedHeaders3 && $headers !== $allowedHeaders4) {
                 throw new Exception(
-                    'Monitor header must be exactly: serial_number, model_name, size_inches'
+                    'Monitor header must be: serial_number, model_name, size_inches with optional price as the 4th column'
                 );
             }
+
+            $hasPriceColumn = isset($headers[3]) && $headers[3] === 'price';
 
             $check = $conn->prepare("
                 SELECT serial_number
@@ -188,6 +198,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
                 $serial = trim((string)($row[0] ?? ''));
                 $model = trim((string)($row[1] ?? ''));
                 $size = trim((string)($row[2] ?? ''));
+                $price = $hasPriceColumn ? trim((string)($row[3] ?? '')) : '';
 
                 $errors = [];
 
@@ -201,6 +212,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
 
                 if ($size !== '' && (!is_numeric($size) || (float)$size <= 0 || (float)$size > 100)) {
                     $errors[] = 'Size must be numeric between 1 and 100 when provided.';
+                }
+
+                if ($price !== '' && $price !== '-' && (!is_numeric($price) || (float)$price < 0)) {
+                    $errors[] = 'Price must be a valid non-negative number when provided.';
                 }
 
                 if ($serial !== '') {
@@ -243,6 +258,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_FILES['file'])) {
                         "size_inches is blank, but monitors.size_inches is still NOT NULL with no default. " .
                         "Change that database column to allow NULL before uploading blank sizes.";
                     continue;
+                }
+
+                // price is optional. If the column is absent, blank, or '-', leave it out so NULL/default is used.
+                if ($price !== '' && $price !== '-') {
+                    $columns[] = 'price';
+                    $values[] = ':price';
+                    $params['price'] = round((float)$price, 2);
                 }
 
                 // Other fields not supplied by this Excel format use their database defaults.
@@ -380,9 +402,10 @@ body{
     min-width:700px;
     width:100%
 }
-.format th:nth-child(1),.format td:nth-child(1){width:33.33%}
-.format th:nth-child(2),.format td:nth-child(2){width:33.33%}
-.format th:nth-child(3),.format td:nth-child(3){width:33.34%}
+.format th:nth-child(1),.format td:nth-child(1){width:25%}
+.format th:nth-child(2),.format td:nth-child(2){width:25%}
+.format th:nth-child(3),.format td:nth-child(3){width:25%}
+.format th:nth-child(4),.format td:nth-child(4){width:25%}
 .format th,.format td{
     padding:.72rem .8rem;
     border-bottom:1px solid var(--b);
@@ -490,12 +513,14 @@ body{
                 <th>serial_number</th>
                 <th>model_name</th>
                 <th>size_inches</th>
+                <th>price <small>(optional)</small></th>
             </tr>
 
             <tr>
                 <td>SN001</td>
                 <td>Dell P2419H</td>
                 <td>24</td>
+                <td>12000</td>
             </tr>
         </table>
     </div>
@@ -503,6 +528,7 @@ body{
     <p class="help">
         <strong>serial_number</strong> and <strong>model_name</strong> are required.
         <strong>size_inches</strong> is optional; leave it blank when unknown.
+        <strong>price</strong> is also optional; you may omit the price column entirely, or leave individual price cells blank when unknown.
         Branch is taken automatically from the logged-in user's account.
         Fields not included in this Excel format, such as Status and Location, use the defaults defined in the monitors table.
     </p>

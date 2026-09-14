@@ -103,7 +103,7 @@ $allowedEmails = [
                     $imaninvitems[] = ['Sold', '../imaninv/sold', 'fas fa-money-bill-wave'];
                 }
                 $sections['IMAN\'S INVENTORY'] = ['icon' => 'fas fa-boxes-stacked', 'items' => $imaninvitems];
-                }
+                }   
             // Devices section
             if (in_array($role, ['super_admin','manager','inventory_admin'])) {
                 $deviceItems = [
@@ -388,17 +388,6 @@ $allowedEmails = [
                     'items' => [
                         ['Make Transfer', '../transfers/index', 'fas fa-exchange-alt'],
                         ['Transfer Logs', '../transfers/transfer_logs', 'fas fa-clipboard-list'],
-                    ]
-                ];
-            }
-
-            //Returns
-            if (in_array($role, ['super_admin','inventory_admin', 'cashier'])) {
-                $sections['RETURNS'] = [
-                    'icon' => 'fas fa-undo-alt',
-                    'items' => [
-                        ['Make Return', '../returns/index', 'fas fa-undo-alt'],
-                        ['Return Logs', '../returns/return_logs', 'fas fa-clipboard-list'],
                     ]
                 ];
             }

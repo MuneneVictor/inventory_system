@@ -8,9 +8,13 @@ require_once __DIR__.'/owner_inventory_access.php';
 $access=requireOwnerInventoryAccess($conn);
 $user_id=(int)$access['user_id'];
 
-$config=$ownerKey==='imans_hustle'
-    ? ['table'=>'iman_hustle_items','type'=>'hustle','folder'=>'imanhus']
-    : ['table'=>'iman_inventory_items','type'=>'inventory','folder'=>'imaninv'];
+$ownerConfigs=[
+    'imans_hustle'=>['table'=>'iman_hustle_items','type'=>'hustle','folder'=>'imanhus'],
+    'iman_inventory'=>['table'=>'iman_inventory_items','type'=>'inventory','folder'=>'imaninv'],
+    'moi_inventory'=>['table'=>'moi_inventory_items','type'=>'inventory','folder'=>'moiinv'],
+];
+if(!isset($ownerConfigs[$ownerKey]))die('Unknown inventory configuration.');
+$config=$ownerConfigs[$ownerKey];
 
 $table=$config['table'];
 $type=$config['type'];

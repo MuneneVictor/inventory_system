@@ -14,8 +14,14 @@ use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 
 requireOwnerInventoryAccess($conn);
 
-$table=$ownerKey==='imans_hustle'?'iman_hustle_items':'iman_inventory_items';
-$type=$ownerKey==='imans_hustle'?'hustle':'inventory';
+$ownerConfigs=[
+    'imans_hustle'=>['table'=>'iman_hustle_items','type'=>'hustle'],
+    'iman_inventory'=>['table'=>'iman_inventory_items','type'=>'inventory'],
+    'moi_inventory'=>['table'=>'moi_inventory_items','type'=>'inventory'],
+];
+if(!isset($ownerConfigs[$ownerKey]))die('Unknown inventory export configuration.');
+$table=$ownerConfigs[$ownerKey]['table'];
+$type=$ownerConfigs[$ownerKey]['type'];
 $mode=trim((string)($_GET['report']??'overview'));if(!in_array($mode,['overview','instock','sold'],true))$mode='overview';
 $serial=trim((string)($_GET['serial']??''));$model=trim((string)($_GET['model']??''));$location=strtoupper(trim((string)($_GET['location']??'')));$status=trim((string)($_GET['status']??''));$df=trim((string)($_GET['date_from']??''));$dt=trim((string)($_GET['date_to']??''));
 $isSearch=($serial!==''||$model!=='');
