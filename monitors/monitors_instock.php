@@ -52,6 +52,10 @@ $countStmt = $conn->prepare("SELECT COUNT(*) FROM monitors m WHERE {$whereSql}")
 $countStmt->execute($params);
 $total_monitors = (int)$countStmt->fetchColumn();
 
+$valueStmt = $conn->prepare("SELECT COALESCE(SUM(m.price), 0) FROM monitors m WHERE {$whereSql}");
+$valueStmt->execute($params);
+$total_stock_value = (float)$valueStmt->fetchColumn();
+
 $total_pages = max(1, (int)ceil($total_monitors / $per_page));
 if ($page > $total_pages) {
     $page = $total_pages;
@@ -59,7 +63,7 @@ if ($page > $total_pages) {
 $offset = ($page - 1) * $per_page;
 
 // Load only the rows needed for the current page.
-$sql = "SELECT m.serial_number, m.model_name, m.size_inches, m.branch, m.date_added, u.full_name AS added_by
+$sql = "SELECT m.serial_number, m.model_name, m.size_inches, m.price, m.branch, m.date_added, u.full_name AS added_by
         FROM monitors m
         JOIN users u ON m.added_by = u.id
         WHERE {$whereSql}
@@ -181,6 +185,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 
     <div class="stats-row">
         <div class="stat-card"><div class="stat-value"><?= number_format($total_monitors) ?></div><div class="stat-label">Total In Stock</div></div>
+        <div class="stat-card"><div class="stat-value">KES <?= number_format($total_stock_value, 2) ?></div><div class="stat-label">Total Stock Value</div></div>
         <div class="stat-card"><div class="stat-value"><?= ($user_role === 'super_admin' ? '2' : '1') ?></div><div class="stat-label">Branch(es)</div></div>
     </div>
 
@@ -216,6 +221,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                             <th>Serial</th>
                             <th>Model</th>
                             <th>Size</th>
+                            <th>Price (KES)</th>
                             <th>Branch</th>
                             <th>Added By</th>
                             <th>Date Added</th>
@@ -229,6 +235,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                             <td><code><?= htmlspecialchars($m['serial_number']) ?></code></td>
                             <td><?= htmlspecialchars($m['model_name']) ?></td>
                             <td><?= $m['size_inches'] ?? '-' ?></td>
+                            <td><?= $m['price'] !== null ? number_format((float)$m['price'], 2) : '—' ?></td>
                             <td class="<?= $m['branch'] === 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>"><?= htmlspecialchars($m['branch']) ?></td>
                             <td><?= htmlspecialchars($m['added_by']) ?></td>
                             <td><?= date('M j, Y', strtotime($m['date_added'])) ?></td>
