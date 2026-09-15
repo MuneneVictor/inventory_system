@@ -50,19 +50,40 @@ $authorizationRequestPrice = '';
 
 // --- Helper: build specs string (like sales_logs) ---
 function buildDeviceSpecs($device) {
+
     $specs = "";
-    if (!empty($device['model_name'])) $specs .= $device['model_name'];
-    if (!empty($device['processor'])) $specs .= " | " . $device['processor'];
-    if (!empty($device['ram'])) $specs .= " | " . $device['ram'] . "GB RAM";
-    if (!empty($device['storage_type']) && !empty($device['storage_capacity'])) {
-        $specs .= " | " . $device['storage_type'] . " " . $device['storage_capacity'] . "GB";
+
+    if (!empty($device['model_name'])) {
+        $specs .= $device['model_name'];
     }
-    if (isset($device['graphics']) && $device['graphics'] !== '') {
+
+    if (!empty($device['processor'])) {
+        $specs .= " | " . $device['processor'];
+    }
+
+    if (!empty($device['ram'])) {
+        $specs .= " | " . $device['ram'] . "GB RAM";
+    }
+
+    if (!empty($device['storage_type']) && !empty($device['storage_capacity'])) {
+
+        if (!empty($device['secondary_storage_type']) && !empty($device['secondary_storage_capacity'])) {
+            $specs .= " | " . $device['storage_type'] . " " . $device['storage_capacity'] . "GB"
+                    . " + " . $device['secondary_storage_type'] . " " . $device['secondary_storage_capacity'] . "GB";
+        } else {
+            $specs .= " | " . $device['storage_type'] . " " . $device['storage_capacity'] . "GB";
+        }
+
+    }
+
+    if (isset($device['graphics']) && $device['graphics'] !== '' && $device['graphics'] !== 'None') {
         $specs .= " | " . $device['graphics'];
     }
+
     if (isset($device['touch']) && $device['touch'] !== 'N/A' && $device['touch'] !== '') {
         $specs .= " | " . $device['touch'];
     }
+
     return trim($specs, " |");
 }
 
