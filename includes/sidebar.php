@@ -112,6 +112,7 @@ $allowedEmails = [
                     ['Device List', '../devices/device_list', 'fas fa-list'],
                     ['In Stock', '../devices/instock', 'fas fa-box'],
                     ['Search Device', '../devices/search', 'fas fa-search'],
+                    ['Bulk Search', '../devices/bulk_search', 'fas fa-search-plus'],
                     ['Give out Device', '../devices/give_device', 'fas fa-gift'],
                     ['Device Logs', '../devices/device_logs', 'fas fa-clipboard-list'],
                     ['Faulty Devices', '../devices/faulty_devices', 'fas fa-exclamation-triangle'],
