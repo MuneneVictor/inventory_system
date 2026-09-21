@@ -26,6 +26,9 @@ if (!$sale || $sale['sale_status'] !== 'active') {
 $sales_person = (int)$sale['sold_by'];
 $salesperson_name = $sale['salesperson_name'] ?? 'Unknown';
 
+// Seller attribution: sales users sell as themselves; cashier/switched-role users use the salesperson selected for the sale.
+$accessory_sold_by = ($user_role === 'sales') ? $user_id : $sales_person;
+
 // Get user's branch
 $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
 $stmt->execute([$user_id]);
@@ -142,7 +145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sell_store_accessory'
                 $log['quantity'],
                 $selling_price,
                 $log['branch'],
-                $user_id,
+                $accessory_sold_by,
                 $sale_item_id
             ]);
 
@@ -236,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sell_display_accessor
                 $quantity_sold,
                 $selling_price,
                 $accessory['branch'],
-                $user_id,
+                $accessory_sold_by,
                 $sale_item_id
             ]);
 
