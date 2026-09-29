@@ -143,13 +143,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_sale_details']
             SET status = 'Sold',
                 place = 'sold',
                 selling_price = ?,
-                sold_at = NOW(),
+                sold_at = COALESCE(?, NOW()),
                 sold_by = ?,
-                owner_notes = COALESCE(NULLIF(?, ''), owner_notes)
+                notes = COALESCE(NULLIF(?, ''), notes)
             WHERE serial_number = ?
         ");
         $updateDevice->execute([
             $sellingPrice,
+            $soldAt,
             $salesPerson,
             $saleNotes,
             $serialPost
@@ -165,10 +166,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_sale_details']
                 payment_status,
                 completion_status
             )
-            VALUES (?, 'completed', NOW(), ?, ?, ?, 'Completed')
+            VALUES (?, 'completed', COALESCE(?, NOW()), ?, ?, ?, 'Completed')
         ");
         $saleStmt->execute([
             $sellingPrice,
+            $soldAt,
             $salesPerson,
             $paymentMethodDb,
             $paymentStatus
@@ -840,6 +842,14 @@ $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             required
                             placeholder="Enter actual selling price"
                         >
+                    </div>
+
+                    <div class="sale-form-group">
+                        <label for="sold_at">
+                            Date Sold
+                            <span style="font-weight:400;color:var(--gray-500);">(Optional — current time if blank)</span>
+                        </label>
+                        <input type="datetime-local" name="sold_at" id="sold_at">
                     </div>
 
                     <div class="sale-form-group">
