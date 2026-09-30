@@ -701,7 +701,7 @@ function accessoryPageUrl(int $pageNumber): string {
                             <th>Added By</th>
                             <th>Updated By</th> 
                             <th>Date Updated</th> 
-                        <?php if (in_array($role, ['super_admin', 'manager'])): ?>
+                        <?php if (in_array($role, ['super_admin', 'manager', 'inventory_admin'])): ?>
                             <th>Actions</th>
                         <?php endif; ?>
                         </tr>
@@ -726,7 +726,7 @@ function accessoryPageUrl(int $pageNumber): string {
                                 <td><?= htmlspecialchars($a['updated_by_name'] ?? '-') ?></td>   <!-- NEW CELL -->
                                 <td><small><?= $a['updated_at'] ? date('M j, Y g:i A', strtotime($a['updated_at'])) : 'Not updated yet' ?></small></td>
                                 <td>
-                                    <?php if (in_array($role, ['super_admin', 'manager'])): ?>
+                                    <?php if (in_array($role, ['super_admin', 'manager', 'inventory_admin'])): ?>
                                                 
                                         <div class="action-links">
                                             <?php if ($a['price'] === null): ?>
