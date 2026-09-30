@@ -576,10 +576,10 @@ function accessoryPageUrl(int $pageNumber): string {
                             <th>Quantity</th>
                             <th>Branch</th>
                             <th>Place</th>
-                    <?php if (in_array($role, ['super_admin', 'manager'])): ?>
+                    
                             <th>Price (KES)</th>
                             <th>Total Value (KES)</th>
-                    <?php endif; ?>
+                    
                             <th>Date Added</th>
                             <th>Added By</th>
                             <th>Updated By</th> 
