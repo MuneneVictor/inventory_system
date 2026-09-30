@@ -338,6 +338,13 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         .mode-toggle .btn-mode.active { background: var(--primary); color: white; }
         .mode-toggle .btn-mode:hover:not(.active) { background: var(--gray-100); }
         .section-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 1rem; display: flex; align-items: center; gap: 0.5rem; }
+        .accessory-search { background:white; border:1px solid var(--gray-200); border-radius:var(--radius-lg); padding:0.85rem 1rem; margin-bottom:1rem; box-shadow:var(--shadow-sm); }
+        .accessory-search-wrap { display:flex; align-items:center; gap:0.65rem; max-width:620px; }
+        .accessory-search-wrap i { color:var(--gray-400); }
+        .accessory-search-input { flex:1; min-width:0; padding:0.7rem 0.85rem; border:1px solid var(--gray-300); border-radius:var(--radius-md); font:inherit; }
+        .accessory-search-input:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 2px rgba(26,75,42,0.1); }
+        .search-count { margin-top:0.45rem; font-size:0.78rem; color:var(--gray-500); }
+        .search-no-results { display:none; text-align:center; padding:2rem; color:var(--gray-500); background:white; border:1px solid var(--gray-200); border-radius:var(--radius-lg); margin-top:0.75rem; }
 
         @media (max-width: 1200px) { .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; } }
         @media (max-width: 768px) {
@@ -404,6 +411,16 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         </a>
     </div>
 
+    <div class="accessory-search">
+        <div class="accessory-search-wrap">
+            <i class="fas fa-search"></i>
+            <input type="search" id="accessorySearch" class="accessory-search-input"
+                   placeholder="Search <?= $mode === 'store' ? 'store' : 'display' ?> accessories by name..."
+                   autocomplete="off">
+        </div>
+        <div class="search-count" id="accessorySearchCount"></div>
+    </div>
+
     <?php if ($mode === 'store'): ?>
         <!-- ========================================================== -->
         <!-- STORE ACCESSORIES MODE (follows charger/HDD pattern)        -->
@@ -434,7 +451,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     </thead>
                     <tbody>
                         <?php $i = 1; foreach ($pendingStore as $log): ?>
-                            <tr>
+                            <tr class="accessory-row" data-search="<?= htmlspecialchars(strtolower(trim((string)$log['accessory_name'])), ENT_QUOTES, 'UTF-8') ?>">
                                 <td><?= $i++ ?></td>
                                 <td><strong><?= htmlspecialchars($log['accessory_name']) ?></strong></td>
                                 <td><span class="badge"><?= (int)$log['quantity'] ?></span></td>
@@ -464,6 +481,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                 </table>
             <?php endif; ?>
         </div>
+        <div class="search-no-results" id="accessoryNoResults"><i class="fas fa-search"></i> No accessories match your search.</div>
 
     <?php else: ?>
         <!-- ========================================================== -->
@@ -490,7 +508,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     </thead>
                     <tbody>
                         <?php $i = 1; foreach ($displayAccessories as $accessory): ?>
-                            <tr>
+                            <tr class="accessory-row" data-search="<?= htmlspecialchars(strtolower(trim((string)$accessory['name'])), ENT_QUOTES, 'UTF-8') ?>">
                                 <td><?= $i++ ?></td>
                                 <td><strong><?= htmlspecialchars($accessory['name']) ?></strong></td>
                                 <td><span class="badge"><?= (int)$accessory['quantity'] ?></span></td>
@@ -520,6 +538,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                 </table>
             <?php endif; ?>
         </div>
+        <div class="search-no-results" id="accessoryNoResults"><i class="fas fa-search"></i> No accessories match your search.</div>
     <?php endif; ?>
 
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
@@ -527,6 +546,36 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    const accessorySearch = document.getElementById('accessorySearch');
+    const accessoryRows = Array.from(document.querySelectorAll('.accessory-row'));
+    const searchCount = document.getElementById('accessorySearchCount');
+    const noResults = document.getElementById('accessoryNoResults');
+
+    function filterAccessories() {
+        if (!accessorySearch) return;
+        const term = accessorySearch.value.trim().toLowerCase();
+        let visible = 0;
+
+        accessoryRows.forEach(function(row) {
+            const text = (row.dataset.search || row.textContent || '').toLowerCase();
+            const match = term === '' || text.includes(term);
+            row.style.display = match ? '' : 'none';
+            if (match) visible++;
+        });
+
+        if (searchCount) {
+            searchCount.textContent = term === ''
+                ? accessoryRows.length + ' accessor' + (accessoryRows.length === 1 ? 'y' : 'ies') + ' available'
+                : visible + ' result' + (visible === 1 ? '' : 's') + ' found';
+        }
+        if (noResults) noResults.style.display = (term !== '' && accessoryRows.length > 0 && visible === 0) ? 'block' : 'none';
+    }
+
+    if (accessorySearch) {
+        accessorySearch.addEventListener('input', filterAccessories);
+        filterAccessories();
+    }
+
     function adjustMainContent() {
         const mainContent = document.querySelector('.main-content');
         const sidebar = document.querySelector('.sidebar');

@@ -89,6 +89,7 @@ $allowedEmails = [
                 if ($role === 'super_admin' || in_array($userEmail, $allowedEmails, true)) {
                     $imanhusitems[] = ['Instock', '../imanhus/instock', 'fas fa-box'];
                     $imanhusitems[] = ['Sold', '../imanhus/sold', 'fas fa-money-bill-wave'];
+                    $imanhusitems[] = ['Bulk Search', '../imanhus/iman_hustle_bulk_search', 'fas fa-search-plus'];
                 }
                 $sections['IMAN\'S HUSTLE'] = ['icon' => 'fas fa-briefcase', 'items' => $imanhusitems];
                 }
@@ -101,6 +102,7 @@ $allowedEmails = [
                 if ($role === 'super_admin' || in_array($userEmail, $allowedEmails, true)) {
                     $imaninvitems[] = ['Instock', '../imaninv/instock', 'fas fa-box'];
                     $imaninvitems[] = ['Sold', '../imaninv/sold', 'fas fa-money-bill-wave'];
+                    $imaninvitems[] = ['Bulk Search', '../imaninv/iman_inventory_bulk_search', 'fas fa-search-plus'];
                 }
                 $sections['IMAN\'S INVENTORY'] = ['icon' => 'fas fa-boxes-stacked', 'items' => $imaninvitems];
                 }   
