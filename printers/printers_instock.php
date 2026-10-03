@@ -18,10 +18,148 @@ if ($user_role !== 'super_admin') {
     if (!$user_branch) die("Your account has no branch assigned.");
 }
 
-$filter_serial = $_GET['serial'] ?? '';
-$filter_branch = $_GET['branch'] ?? '';
+if (empty($_SESSION['printer_sale_csrf'])) {
+    $_SESSION['printer_sale_csrf'] = bin2hex(random_bytes(32));
+}
 
-$sql = "SELECT p.serial_number, p.model_name, p.branch, p.date_added, u.full_name AS added_by
+$salesStmt = $conn->prepare("
+    SELECT id, full_name
+    FROM users
+    WHERE role = 'sales' AND is_active = 1
+    ORDER BY full_name ASC
+");
+$salesStmt->execute();
+$salesPeople = $salesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_sale_details'])) {
+    $csrf = (string)($_POST['csrf_token'] ?? '');
+    $serialPost = trim((string)($_POST['serial_number'] ?? ''));
+    $salesPerson = (int)($_POST['sales_person'] ?? 0);
+    $sellingPrice = (float)($_POST['selling_price'] ?? 0);
+    $soldAtInput = trim((string)($_POST['sold_at'] ?? ''));
+    $paymentStatus = trim((string)($_POST['payment_status'] ?? ''));
+    $paymentMethod = trim((string)($_POST['payment_method'] ?? ''));
+
+    try {
+        if (!hash_equals($_SESSION['printer_sale_csrf'], $csrf)) {
+            throw new Exception('Security validation failed. Please try again.');
+        }
+        if ($serialPost === '') throw new Exception('Printer serial number is required.');
+        if ($salesPerson <= 0) throw new Exception('Please select a salesperson.');
+        if ($sellingPrice <= 0) throw new Exception('Please enter a valid selling price.');
+        if (!in_array($paymentStatus, ['paid', 'unpaid'], true)) {
+            throw new Exception('Please select Paid or Unpaid.');
+        }
+
+        $allowedPaymentMethods = ['cash', 'mpesa-till', 'mpesa-pochi', 'bank-transfer'];
+        if ($paymentMethod !== '' && !in_array($paymentMethod, $allowedPaymentMethods, true)) {
+            throw new Exception('Invalid payment method selected.');
+        }
+        $paymentMethodDb = $paymentMethod !== '' ? $paymentMethod : null;
+
+        $soldAt = null;
+        if ($soldAtInput !== '') {
+            $soldAtDate = DateTime::createFromFormat('Y-m-d\TH:i', $soldAtInput);
+            $dateErrors = DateTime::getLastErrors();
+            if (!$soldAtDate || ($dateErrors !== false && ($dateErrors['warning_count'] > 0 || $dateErrors['error_count'] > 0))) {
+                throw new Exception('Please select a valid date sold.');
+            }
+            $soldAt = $soldAtDate->format('Y-m-d H:i:s');
+        }
+
+        $salesUserStmt = $conn->prepare("
+            SELECT id, full_name
+            FROM users
+            WHERE id = ? AND role = 'sales' AND is_active = 1
+            LIMIT 1
+        ");
+        $salesUserStmt->execute([$salesPerson]);
+        $salesUser = $salesUserStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$salesUser) throw new Exception('Selected salesperson is not available.');
+
+        $conn->beginTransaction();
+
+        $printerStmt = $conn->prepare("
+            SELECT *
+            FROM printers
+            WHERE serial_number = ? AND status = 'In Stock'
+            FOR UPDATE
+        ");
+        $printerStmt->execute([$serialPost]);
+        $printer = $printerStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$printer) throw new Exception('Printer was not found in stock.');
+
+        if ($user_role !== 'super_admin' && $user_branch !== '' && $printer['branch'] !== $user_branch) {
+            throw new Exception('You cannot sell a printer from another branch.');
+        }
+
+        $description = trim($printer['model_name'] ?? 'Printer');
+
+        $updatePrinter = $conn->prepare("
+            UPDATE printers
+            SET status = 'Sold',
+                selling_price = ?,
+                date_sold = COALESCE(?, NOW()),
+                sold_by = ?
+            WHERE serial_number = ?
+        ");
+        $updatePrinter->execute([$sellingPrice, $soldAt, $salesPerson, $serialPost]);
+
+        $saleStmt = $conn->prepare("
+            INSERT INTO sales (
+                total_amount, sale_status, completed_at, sold_by,
+                payment_method, payment_status, completion_status
+            )
+            VALUES (?, 'completed', COALESCE(?, NOW()), ?, ?, ?, 'Completed')
+        ");
+        $saleStmt->execute([$sellingPrice, $soldAt, $salesPerson, $paymentMethodDb, $paymentStatus]);
+        $saleId = (int)$conn->lastInsertId();
+
+        $saleItemStmt = $conn->prepare("
+            INSERT INTO sale_items (
+                sale_id, item_type, item_id, description,
+                quantity, unit_price, sales_person
+            )
+            VALUES (?, 'printers', ?, ?, 1, ?, ?)
+        ");
+        $saleItemStmt->execute([
+            $saleId, $serialPost, $description, $sellingPrice, $salesPerson
+        ]);
+
+        $methodLabel = $paymentMethodDb ?? 'Not specified';
+        $logStmt = $conn->prepare("
+            INSERT INTO activity_logs (user_id, action, details)
+            VALUES (?, 'Updated printer sale details', ?)
+        ");
+        $logStmt->execute([
+            $user_id,
+            "Marked printer SN: {$serialPost} as sold; salesperson: {$salesUser['full_name']}; " .
+            "price: KES " . number_format($sellingPrice, 2) .
+            "; payment status: {$paymentStatus}; payment method: {$methodLabel}; sale #{$saleId}"
+        ]);
+
+        $conn->commit();
+        $_SESSION['printer_sale_success'] =
+            "Sale details updated successfully for printer {$serialPost}. Sale #{$saleId} created.";
+    } catch (Throwable $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        $_SESSION['printer_sale_error'] = $e->getMessage();
+    }
+
+    $queryString = $_SERVER['QUERY_STRING'] ?? '';
+    header('Location: printers_instock' . ($queryString !== '' ? '?' . $queryString : ''));
+    exit;
+}
+
+$flashSuccess = $_SESSION['printer_sale_success'] ?? '';
+$flashError = $_SESSION['printer_sale_error'] ?? '';
+unset($_SESSION['printer_sale_success'], $_SESSION['printer_sale_error']);
+
+$filter_serial = trim($_GET['serial'] ?? '');
+$filter_model = trim($_GET['model'] ?? '');
+$filter_branch = trim($_GET['branch'] ?? '');
+
+$sql = "SELECT p.serial_number, p.model_name, p.price, p.branch, p.date_added, u.full_name AS added_by
         FROM printers p
         JOIN users u ON p.added_by = u.id
         WHERE p.status = 'In Stock'";
@@ -33,7 +171,11 @@ if ($user_role !== 'super_admin') {
 }
 if (!empty($filter_serial)) {
     $sql .= " AND p.serial_number LIKE ?";
-    $params[] = "%$filter_serial%";
+    $params[] = $filter_serial . '%';
+}
+if (!empty($filter_model)) {
+    $sql .= " AND p.model_name LIKE ?";
+    $params[] = "%$filter_model%";
 }
 if ($user_role === 'super_admin' && !empty($filter_branch)) {
     $sql .= " AND p.branch = ?";
@@ -105,6 +247,25 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         .btn-secondary { background: var(--gray-500); }
         .btn-view { background: var(--info); color: white; padding: 0.4rem 1rem; border-radius: var(--radius-md); font-size: 0.8rem; text-decoration: none; display: inline-flex; align-items: center; gap: 0.4rem; transition: background 0.2s; }
         .btn-view:hover { background: #1d4ed8; }
+        .action-links { display:flex; gap:.5rem; flex-wrap:wrap; }
+        .btn-sale { background:#166534; color:white; border:0; border-radius:var(--radius-md); padding:.4rem .7rem; font-size:.8rem; cursor:pointer; display:inline-flex; align-items:center; gap:.35rem; }
+        .btn-sale:hover { background:#14532d; }
+        .alert { padding:1rem 1.25rem; border-radius:var(--radius-md); margin-bottom:1rem; display:flex; align-items:center; gap:.65rem; }
+        .alert-success { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; }
+        .alert-error { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+        .sale-modal { position:fixed; inset:0; background:rgba(15,23,42,.58); display:none; align-items:center; justify-content:center; z-index:9999; padding:1rem; }
+        .sale-modal.open { display:flex; }
+        .sale-modal-dialog { width:min(520px,100%); max-height:92vh; overflow-y:auto; background:white; border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,.22); }
+        .sale-modal-header { padding:1.15rem 1.25rem; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--gray-200); }
+        .sale-modal-header h3 { margin:0; font-size:1.05rem; }
+        .modal-close { border:0; background:transparent; color:var(--gray-500); cursor:pointer; font-size:1.1rem; }
+        .sale-modal-body { padding:1.25rem; }
+        .sale-printer-label { margin-bottom:1rem; padding:.8rem .9rem; border-radius:8px; background:var(--gray-50); border:1px solid var(--gray-200); font-size:.85rem; }
+        .sale-form-group { margin-bottom:1rem; }
+        .sale-form-group label { display:block; margin-bottom:.4rem; font-size:.82rem; font-weight:600; color:var(--gray-600); }
+        .sale-form-group input, .sale-form-group select { width:100%; padding:.7rem .8rem; border:1px solid var(--gray-300); border-radius:8px; background:white; font:inherit; }
+        .modal-actions { display:flex; gap:.75rem; justify-content:flex-end; padding-top:.4rem; }
+
         .table-wrapper { background: white; border-radius: var(--radius-xl); border: 1px solid var(--gray-200); overflow-x: auto; }
         table { width: 100%; border-collapse: collapse; min-width: 700px; }
         th { background: var(--gray-50); padding: 1rem; text-align: left; font-weight: 600; color: var(--gray-600); border-bottom: 1px solid var(--gray-200); white-space: nowrap; }
@@ -135,6 +296,13 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
         </div>
     </div>
 
+    <?php if ($flashSuccess): ?>
+        <div class="alert alert-success"><i class="fas fa-check-circle"></i><?= htmlspecialchars($flashSuccess) ?></div>
+    <?php endif; ?>
+    <?php if ($flashError): ?>
+        <div class="alert alert-error"><i class="fas fa-exclamation-circle"></i><?= htmlspecialchars($flashError) ?></div>
+    <?php endif; ?>
+
     <div class="stats-row">
         <div class="stat-card"><div class="stat-value"><?= count($printers) ?></div><div class="stat-label">Total In Stock</div></div>
         <div class="stat-card"><div class="stat-value"><?= ($user_role === 'super_admin' ? '2' : '1') ?></div><div class="stat-label">Branch(es)</div></div>
@@ -143,7 +311,11 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     <form method="GET" class="filter-form" id="filterForm">
         <div class="filter-group">
             <label>Serial Number</label>
-            <input type="text" name="serial" placeholder="Scan or type..." value="<?= htmlspecialchars($filter_serial) ?>" autofocus>
+            <input type="text" name="serial" id="printerSerialSearch" placeholder="Scan or type..." value="<?= htmlspecialchars($filter_serial) ?>" autocomplete="off" autofocus>
+        </div>
+        <div class="filter-group">
+            <label>Model Name</label>
+            <input type="text" name="model" placeholder="e.g. Epson L3250..." value="<?= htmlspecialchars($filter_model) ?>">
         </div>
         <?php if ($user_role === 'super_admin'): ?>
             <div class="filter-group">
@@ -187,7 +359,17 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                             <td><?= htmlspecialchars($p['price'] ?? '-') ?></td>
                             <td><?= htmlspecialchars($p['added_by']) ?></td>
                             <td><?= date('M j, Y', strtotime($p['date_added'])) ?></td>
-                            <td><a href="view_printer?sn=<?= urlencode($p['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a></td>
+                            <td>
+                                <div class="action-links">
+                                    <a href="view_printer?sn=<?= urlencode($p['serial_number']) ?>" class="btn-view"><i class="fas fa-eye"></i> View</a>
+                                    <button type="button" class="btn-sale"
+                                            data-serial="<?= htmlspecialchars($p['serial_number'], ENT_QUOTES) ?>"
+                                            data-model="<?= htmlspecialchars($p['model_name'], ENT_QUOTES) ?>"
+                                            onclick="openPrinterSaleModal(this)">
+                                        <i class="fas fa-cash-register"></i> Update Sale Details
+                                    </button>
+                                </div>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -199,6 +381,143 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
     </div>
     <div class="footer"><i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers</div>
 </div>
+
+<div class="sale-modal" id="printerSaleModal" aria-hidden="true">
+    <div class="sale-modal-dialog">
+        <div class="sale-modal-header">
+            <h3><i class="fas fa-cash-register"></i> Update Printer Sale Details</h3>
+            <button type="button" class="modal-close" onclick="closePrinterSaleModal()"><i class="fas fa-times"></i></button>
+        </div>
+        <form method="POST" class="sale-modal-body">
+            <input type="hidden" name="update_sale_details" value="1">
+            <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['printer_sale_csrf']) ?>">
+            <input type="hidden" name="serial_number" id="printerSaleSerial">
+
+            <div class="sale-printer-label" id="printerSaleLabel"></div>
+
+            <div class="sale-form-group">
+                <label>Sales Person</label>
+                <select name="sales_person" required>
+                    <option value="">-- Select Sales Person --</option>
+                    <?php foreach ($salesPeople as $salesPerson): ?>
+                        <option value="<?= (int)$salesPerson['id'] ?>"><?= htmlspecialchars($salesPerson['full_name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+
+            <div class="sale-form-group">
+                <label>Selling Price (KES)</label>
+                <input type="number" name="selling_price" min="0.01" step="0.01" required>
+            </div>
+
+            <div class="sale-form-group">
+                <label>Date Sold <span style="font-weight:400;color:var(--gray-500);">(Optional — current time if blank)</span></label>
+                <input type="datetime-local" name="sold_at">
+            </div>
+
+            <div class="sale-form-group">
+                <label>Payment Status</label>
+                <select name="payment_status" required>
+                    <option value="">-- Select --</option>
+                    <option value="paid">Paid</option>
+                    <option value="unpaid">Unpaid</option>
+                </select>
+            </div>
+
+            <div class="sale-form-group">
+                <label>Payment Method <span style="font-weight:400;color:var(--gray-500);">(Optional)</span></label>
+                <select name="payment_method">
+                    <option value="">Not specified</option>
+                    <option value="cash">Cash</option>
+                    <option value="mpesa-till">M-Pesa Till</option>
+                    <option value="mpesa-pochi">M-Pesa Pochi</option>
+                    <option value="bank-transfer">Bank Transfer</option>
+                </select>
+            </div>
+
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="closePrinterSaleModal()">Cancel</button>
+                <button type="submit" class="btn"><i class="fas fa-check"></i> Save Sale Details</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+(function(){
+    const form = document.getElementById('filterForm');
+    const serialInput = document.getElementById('printerSerialSearch');
+    if (!form || !serialInput) return;
+
+    let timer = null;
+    let controller = null;
+
+    async function ajaxSerialSearch() {
+        if (controller) controller.abort();
+        controller = new AbortController();
+
+        const params = new URLSearchParams(new FormData(form));
+        const requestUrl = window.location.pathname + '?' + params.toString();
+        const caretStart = serialInput.selectionStart ?? serialInput.value.length;
+        const caretEnd = serialInput.selectionEnd ?? serialInput.value.length;
+
+        try {
+            const response = await fetch(requestUrl, {
+                method: 'GET',
+                headers: {'X-Requested-With': 'XMLHttpRequest'},
+                signal: controller.signal,
+                cache: 'no-store'
+            });
+            if (!response.ok) throw new Error('Search request failed');
+
+            const html = await response.text();
+            const doc = new DOMParser().parseFromString(html, 'text/html');
+
+            const freshStats = doc.querySelector('.stats-row');
+            const freshTable = doc.querySelector('.table-wrapper');
+            const currentStats = document.querySelector('.stats-row');
+            const currentTable = document.querySelector('.table-wrapper');
+
+            if (freshStats && currentStats) currentStats.innerHTML = freshStats.innerHTML;
+            if (freshTable && currentTable) currentTable.innerHTML = freshTable.innerHTML;
+
+            history.replaceState({}, '', requestUrl);
+            serialInput.focus({preventScroll: true});
+            serialInput.setSelectionRange(caretStart, caretEnd);
+        } catch (error) {
+            if (error.name !== 'AbortError') console.error('Printer serial live search failed:', error);
+        }
+    }
+
+    serialInput.addEventListener('input', function(){
+        clearTimeout(timer);
+        timer = setTimeout(ajaxSerialSearch, 250);
+    });
+})();
+
+function openPrinterSaleModal(button) {
+    const modal = document.getElementById('printerSaleModal');
+    document.getElementById('printerSaleSerial').value = button.dataset.serial || '';
+    document.getElementById('printerSaleLabel').textContent =
+        (button.dataset.model || 'Printer') + ' | SN: ' + (button.dataset.serial || '');
+    modal.classList.add('open');
+    modal.setAttribute('aria-hidden', 'false');
+}
+
+function closePrinterSaleModal() {
+    const modal = document.getElementById('printerSaleModal');
+    modal.classList.remove('open');
+    modal.setAttribute('aria-hidden', 'true');
+}
+
+document.getElementById('printerSaleModal')?.addEventListener('click', function(e) {
+    if (e.target === this) closePrinterSaleModal();
+});
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') closePrinterSaleModal();
+});
+</script>
+
 <?php require_once "../includes/footer.php"; ?>
 </body>
 </html>

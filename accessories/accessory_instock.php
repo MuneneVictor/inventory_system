@@ -22,6 +22,100 @@ if ($role === 'manager') {
     $user_branch = $user_data['branch'] ?? '';
 }
 
+// One-time security token for Update Sale Details.
+if (empty($_SESSION['accessory_sale_csrf'])) {
+    $_SESSION['accessory_sale_csrf'] = bin2hex(random_bytes(32));
+}
+
+// Active salespeople used in the Update Sale Details dialog.
+$salesStmt = $conn->prepare("SELECT id, full_name FROM users WHERE role = 'sales' AND is_active = 1 ORDER BY full_name ASC");
+$salesStmt->execute();
+$salesPeople = $salesStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Update accessory sale details directly from In-Stock Accessories.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_sale_details'])) {
+    $csrf = (string)($_POST['csrf_token'] ?? '');
+    $accessoryId = (int)($_POST['accessory_id'] ?? 0);
+    $salesPerson = (int)($_POST['sales_person'] ?? 0);
+    $quantitySold = (int)($_POST['quantity_sold'] ?? 0);
+    $sellingPrice = (float)($_POST['selling_price'] ?? 0); // per unit
+    $soldAtInput = trim((string)($_POST['sold_at'] ?? ''));
+    $paymentStatus = trim((string)($_POST['payment_status'] ?? ''));
+    $paymentMethod = trim((string)($_POST['payment_method'] ?? ''));
+
+    try {
+        if (!hash_equals($_SESSION['accessory_sale_csrf'], $csrf)) throw new Exception('Security validation failed. Please try again.');
+        if ($accessoryId <= 0) throw new Exception('Accessory is required.');
+        if ($salesPerson <= 0) throw new Exception('Please select a salesperson.');
+        if ($quantitySold <= 0) throw new Exception('Please enter a valid quantity.');
+        if ($sellingPrice <= 0) throw new Exception('Please enter a valid selling price.');
+        if (!in_array($paymentStatus, ['paid', 'unpaid'], true)) throw new Exception('Please select Paid or Unpaid.');
+
+        $allowedPaymentMethods = ['cash', 'mpesa-till', 'mpesa-pochi', 'bank-transfer'];
+        if ($paymentMethod !== '' && !in_array($paymentMethod, $allowedPaymentMethods, true)) throw new Exception('Invalid payment method selected.');
+        $paymentMethodDb = $paymentMethod !== '' ? $paymentMethod : null;
+
+        $soldAt = null;
+        if ($soldAtInput !== '') {
+            $dt = DateTime::createFromFormat('Y-m-d\\TH:i', $soldAtInput, new DateTimeZone('Africa/Nairobi'));
+            if (!$dt || $dt->format('Y-m-d\\TH:i') !== $soldAtInput) throw new Exception('Invalid date sold.');
+            $soldAt = $dt->format('Y-m-d H:i:s');
+        }
+
+        $salesUserStmt = $conn->prepare("SELECT id, full_name FROM users WHERE id = ? AND role = 'sales' AND is_active = 1 LIMIT 1");
+        $salesUserStmt->execute([$salesPerson]);
+        $salesUser = $salesUserStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$salesUser) throw new Exception('Selected salesperson is not available.');
+
+        $conn->beginTransaction();
+
+        $accessoryStmt = $conn->prepare("SELECT * FROM accessories WHERE id = ? AND status = 'instock' FOR UPDATE");
+        $accessoryStmt->execute([$accessoryId]);
+        $accessory = $accessoryStmt->fetch(PDO::FETCH_ASSOC);
+        if (!$accessory) throw new Exception('Accessory was not found in stock.');
+        if ($role === 'manager' && $user_branch !== '' && $accessory['branch'] !== $user_branch) throw new Exception('You cannot sell an accessory from another branch.');
+        if ($quantitySold > (int)$accessory['quantity']) throw new Exception('Quantity sold cannot exceed available stock of ' . (int)$accessory['quantity'] . '.');
+
+        $remainingQty = (int)$accessory['quantity'] - $quantitySold;
+        $newStatus = $remainingQty === 0 ? 'sold' : 'instock';
+        $totalAmount = $quantitySold * $sellingPrice;
+
+        $updateAccessory = $conn->prepare("UPDATE accessories SET quantity = ?, status = ?, updated_by = ?, updated_at = NOW() WHERE id = ?");
+        $updateAccessory->execute([$remainingQty, $newStatus, $user_id, $accessoryId]);
+
+        $saleStmt = $conn->prepare("INSERT INTO sales (total_amount, sale_status, completed_at, sold_by, payment_method, payment_status, completion_status) VALUES (?, 'completed', COALESCE(?, NOW()), ?, ?, ?, 'Completed')");
+        $saleStmt->execute([$totalAmount, $soldAt, $salesPerson, $paymentMethodDb, $paymentStatus]);
+        $saleId = (int)$conn->lastInsertId();
+
+        $description = trim(($accessory['name'] ?? '') . (!empty($accessory['type']) ? ' | ' . $accessory['type'] : '') . ' | ' . ($accessory['branch'] ?? '') . ' | ' . ($accessory['place'] ?? ''));
+        $saleItemStmt = $conn->prepare("INSERT INTO sale_items (sale_id, item_type, item_id, description, quantity, unit_price, sales_person) VALUES (?, 'accessory', ?, ?, ?, ?, ?)");
+        $saleItemStmt->execute([$saleId, $accessoryId, $description, $quantitySold, $sellingPrice, $salesPerson]);
+        $saleItemId = (int)$conn->lastInsertId();
+
+        $soldAccessoryStmt = $conn->prepare("INSERT INTO sold_accessories (accessory_id, accessory_name, quantity, selling_price, branch, sold_by, date_sold, sale_item_id) VALUES (?, ?, ?, ?, ?, ?, COALESCE(?, NOW()), ?)");
+        $soldAccessoryStmt->execute([$accessoryId, $accessory['name'], $quantitySold, $sellingPrice, $accessory['branch'], $salesPerson, $soldAt, $saleItemId]);
+
+        $methodLabel = $paymentMethodDb ?? 'Not specified';
+        $logStmt = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'Updated Accessory Sale Details', ?)");
+        $logStmt->execute([$user_id, "Sold {$quantitySold} x {$accessory['name']}; salesperson: {$salesUser['full_name']}; unit price: KES " . number_format($sellingPrice, 2) . "; total: KES " . number_format($totalAmount, 2) . "; payment status: {$paymentStatus}; payment method: {$methodLabel}; sale #{$saleId}"]);
+
+        $conn->commit();
+        $_SESSION['accessory_sale_success'] = "Sale details updated successfully for {$accessory['name']}. Sale #{$saleId} created.";
+    } catch (Throwable $e) {
+        if ($conn->inTransaction()) $conn->rollBack();
+        $_SESSION['accessory_sale_error'] = $e->getMessage();
+    }
+
+    $query = $_GET;
+    unset($query['update_sale_details']);
+    header('Location: accessory_instock.php' . ($query ? '?' . http_build_query($query) : ''));
+    exit;
+}
+
+$flashSuccess = $_SESSION['accessory_sale_success'] ?? '';
+$flashError = $_SESSION['accessory_sale_error'] ?? '';
+unset($_SESSION['accessory_sale_success'], $_SESSION['accessory_sale_error']);
+
 // Handle search inputs
 $search_name = trim($_GET['name'] ?? '');
 $search_type = trim($_GET['type'] ?? '');
@@ -429,6 +523,26 @@ function accessoryPageUrl(int $pageNumber): string {
         .per-page-form{display:flex;align-items:center;gap:.5rem;font-size:.85rem;color:var(--gray-600)}
         .per-page-form select{padding:.45rem .65rem;border:1px solid var(--gray-300);border-radius:var(--radius-md);background:#fff}
 
+
+        .btn-sale { background:#166534; color:#fff; border:0; border-radius:var(--radius-sm); padding:.4rem .65rem; font-size:.75rem; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:.35rem; white-space:nowrap; }
+        .btn-sale:hover { background:#14532d; }
+        .alert { padding:1rem 1.25rem; border-radius:var(--radius-md); margin-bottom:1rem; display:flex; align-items:center; gap:.65rem; }
+        .alert-success { background:#ecfdf5; border:1px solid #a7f3d0; color:#065f46; }
+        .alert-error { background:#fef2f2; border:1px solid #fecaca; color:#991b1b; }
+        .sale-modal { position:fixed; inset:0; background:rgba(15,23,42,.58); display:none; align-items:center; justify-content:center; z-index:9999; padding:1rem; }
+        .sale-modal.open { display:flex; }
+        .sale-modal-dialog { width:min(520px,100%); max-height:92vh; overflow-y:auto; background:#fff; border-radius:14px; box-shadow:0 24px 60px rgba(0,0,0,.22); }
+        .sale-modal-header { padding:1.15rem 1.25rem; display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--gray-200); }
+        .sale-modal-header h3 { margin:0; font-size:1.05rem; }
+        .modal-close { border:0; background:transparent; color:var(--gray-500); cursor:pointer; font-size:1.1rem; }
+        .sale-modal-body { padding:1.25rem; }
+        .sale-accessory-label { margin-bottom:1rem; padding:.8rem .9rem; border-radius:8px; background:var(--gray-50); border:1px solid var(--gray-200); font-size:.85rem; }
+        .sale-form-group { margin-bottom:1rem; }
+        .sale-form-group label { display:block; margin-bottom:.4rem; font-size:.82rem; font-weight:600; color:var(--gray-600); }
+        .sale-form-group input,.sale-form-group select { width:100%; padding:.7rem .8rem; border:1px solid var(--gray-300); border-radius:8px; background:#fff; font:inherit; }
+        .modal-actions { display:flex; gap:.75rem; justify-content:flex-end; padding-top:.4rem; }
+        .modal-actions .btn { width:auto; }
+
         @media (max-width: 1200px) {
             .main-content { margin-left: 0 !important; width: 100% !important; padding: 1.5rem 1rem 1rem !important; padding-top: 5rem !important; }
         }
@@ -474,6 +588,9 @@ function accessoryPageUrl(int $pageNumber): string {
             <span>In‑Stock Accessories</span>
         </div>
     </div>
+
+    <?php if ($flashSuccess): ?><div class="alert alert-success"><i class="fas fa-check-circle"></i><?= htmlspecialchars($flashSuccess) ?></div><?php endif; ?>
+    <?php if ($flashError): ?><div class="alert alert-error"><i class="fas fa-exclamation-circle"></i><?= htmlspecialchars($flashError) ?></div><?php endif; ?>
 
     <!-- Stats Cards -->
     <div class="stats-row">
@@ -576,15 +693,15 @@ function accessoryPageUrl(int $pageNumber): string {
                             <th>Quantity</th>
                             <th>Branch</th>
                             <th>Place</th>
-                    <?php if (in_array($role, ['super_admin', 'manager'])): ?>
+                    
                             <th>Price (KES)</th>
                             <th>Total Value (KES)</th>
-                    <?php endif; ?>
+                    
                             <th>Date Added</th>
                             <th>Added By</th>
                             <th>Updated By</th> 
                             <th>Date Updated</th> 
-                        <?php if (in_array($role, ['super_admin', 'manager'])): ?>
+                        <?php if (in_array($role, ['super_admin', 'manager', 'inventory_admin'])): ?>
                             <th>Actions</th>
                         <?php endif; ?>
                         </tr>
@@ -609,7 +726,7 @@ function accessoryPageUrl(int $pageNumber): string {
                                 <td><?= htmlspecialchars($a['updated_by_name'] ?? '-') ?></td>   <!-- NEW CELL -->
                                 <td><small><?= $a['updated_at'] ? date('M j, Y g:i A', strtotime($a['updated_at'])) : 'Not updated yet' ?></small></td>
                                 <td>
-                                    <?php if (in_array($role, ['super_admin', 'manager'])): ?>
+                                    <?php if (in_array($role, ['super_admin', 'manager', 'inventory_admin'])): ?>
                                                 
                                         <div class="action-links">
                                             <?php if ($a['price'] === null): ?>
@@ -621,6 +738,13 @@ function accessoryPageUrl(int $pageNumber): string {
                                                     <i class="fas fa-edit"></i> Update Price
                                                 </a>
                                             <?php endif; ?>
+                                            <button type="button" class="btn-sale open-sale-modal"
+                                                    data-id="<?= (int)$a['id'] ?>"
+                                                    data-name="<?= htmlspecialchars($a['name'], ENT_QUOTES, 'UTF-8') ?>"
+                                                    data-quantity="<?= (int)$a['quantity'] ?>"
+                                                    data-price="<?= $a['price'] !== null ? htmlspecialchars((string)$a['price'], ENT_QUOTES, 'UTF-8') : '' ?>">
+                                                <i class="fas fa-cash-register"></i> Update Sale Details
+                                            </button>
                                         </div>
                                     
                                     <?php endif; ?>
@@ -678,6 +802,31 @@ function accessoryPageUrl(int $pageNumber): string {
         <?php endif; ?>
     </div>
 
+
+    <div class="sale-modal" id="saleDetailsModal" aria-hidden="true">
+        <div class="sale-modal-dialog">
+            <div class="sale-modal-header">
+                <h3><i class="fas fa-cash-register"></i> Update Accessory Sale Details</h3>
+                <button type="button" class="modal-close" id="closeSaleModal"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="sale-modal-body">
+                <div class="sale-accessory-label"><strong id="saleAccessoryName">-</strong><br>Available Quantity: <strong id="saleAvailableQty">0</strong></div>
+                <form method="POST" id="saleDetailsForm">
+                    <input type="hidden" name="update_sale_details" value="1">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['accessory_sale_csrf']) ?>">
+                    <input type="hidden" name="accessory_id" id="saleAccessoryId">
+                    <div class="sale-form-group"><label>Sales Person</label><select name="sales_person" required><option value="">-- Select Sales Person --</option><?php foreach ($salesPeople as $sp): ?><option value="<?= (int)$sp['id'] ?>"><?= htmlspecialchars($sp['full_name']) ?></option><?php endforeach; ?></select></div>
+                    <div class="sale-form-group"><label for="quantity_sold">Quantity Sold</label><input type="number" name="quantity_sold" id="quantity_sold" min="1" step="1" required></div>
+                    <div class="sale-form-group"><label for="selling_price">Selling Price per Unit (KES)</label><input type="number" name="selling_price" id="selling_price" min="0.01" step="0.01" required placeholder="Enter actual unit selling price"></div>
+                    <div class="sale-form-group"><label for="sold_at">Date Sold <span style="font-weight:400;color:var(--gray-500)">(Optional — current time if blank)</span></label><input type="datetime-local" name="sold_at" id="sold_at"></div>
+                    <div class="sale-form-group"><label for="payment_status">Payment Status</label><select name="payment_status" id="payment_status" required><option value="">-- Select --</option><option value="paid">Paid</option><option value="unpaid">Unpaid</option></select></div>
+                    <div class="sale-form-group"><label for="payment_method">Payment Method <span style="font-weight:400;color:var(--gray-500)">(Optional)</span></label><select name="payment_method" id="payment_method"><option value="">-- Not specified --</option><option value="cash">Cash</option><option value="mpesa-till">M-Pesa Till</option><option value="mpesa-pochi">M-Pesa Pochi</option><option value="bank-transfer">Bank Transfer</option></select></div>
+                    <div class="modal-actions"><button type="button" class="btn btn-secondary" id="cancelSaleModal">Cancel</button><button type="submit" class="btn btn-primary"><i class="fas fa-save"></i> Save Sale Details</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <div class="footer">
         <i class="fas fa-copyright"></i> <?= date('Y'); ?> Mombasa Computers
     </div>
@@ -685,6 +834,40 @@ function accessoryPageUrl(int $pageNumber): string {
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+
+    const saleModal = document.getElementById('saleDetailsModal');
+    const saleForm = document.getElementById('saleDetailsForm');
+    const accessoryIdInput = document.getElementById('saleAccessoryId');
+    const accessoryName = document.getElementById('saleAccessoryName');
+    const availableQty = document.getElementById('saleAvailableQty');
+    const quantityInput = document.getElementById('quantity_sold');
+    const sellingPriceInput = document.getElementById('selling_price');
+
+    function openAccessorySaleModal(button) {
+        const qty = parseInt(button.dataset.quantity || '0', 10);
+        accessoryIdInput.value = button.dataset.id || '';
+        accessoryName.textContent = button.dataset.name || '-';
+        availableQty.textContent = qty;
+        quantityInput.max = qty;
+        quantityInput.value = qty > 0 ? 1 : '';
+        sellingPriceInput.value = button.dataset.price || '';
+        saleModal.classList.add('open');
+        saleModal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+    }
+    function closeAccessorySaleModal() {
+        saleModal.classList.remove('open');
+        saleModal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        saleForm.reset();
+        accessoryIdInput.value = '';
+    }
+    document.querySelectorAll('.open-sale-modal').forEach(btn => btn.addEventListener('click', () => openAccessorySaleModal(btn)));
+    document.getElementById('closeSaleModal')?.addEventListener('click', closeAccessorySaleModal);
+    document.getElementById('cancelSaleModal')?.addEventListener('click', closeAccessorySaleModal);
+    saleModal?.addEventListener('click', e => { if (e.target === saleModal) closeAccessorySaleModal(); });
+    document.addEventListener('keydown', e => { if (e.key === 'Escape' && saleModal?.classList.contains('open')) closeAccessorySaleModal(); });
+
     function adjustMainContent() {
         const mainContent = document.querySelector('.main-content');
         const sidebar = document.querySelector('.sidebar');
