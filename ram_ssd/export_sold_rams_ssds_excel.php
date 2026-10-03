@@ -53,16 +53,20 @@ if ($search_category) {
     $params['category'] = $search_category;
 }
 if ($search_type) {
-    $sql .= " AND s.type LIKE :type";
+    $sql .= " AND LOWER(s.type) LIKE LOWER(:type)";
     $params['type'] = "%$search_type%";
 }
 if ($search_storage) {
-    $sql .= " AND s.storage = :storage";
-    $params['storage'] = $search_storage;
+    $sql .= " AND LOWER(s.storage) LIKE LOWER(:storage)";
+    $params['storage'] = "%$search_storage%";
 }
 if ($search_branch && $role !== 'manager') {
-    $sql .= " AND s.branch = :branch";
-    $params['branch'] = $search_branch;
+    if ($search_branch === '__NULL__') {
+        $sql .= " AND s.branch IS NULL";
+    } else {
+        $sql .= " AND s.branch = :branch";
+        $params['branch'] = $search_branch;
+    }
 }
 if ($date_from) {
     $sql .= " AND DATE(s.date_sold) >= :date_from";
@@ -111,8 +115,8 @@ $filterNote = "Filters applied: ";
 $criteria = [];
 if (!empty($search_category)) $criteria[] = "Category: " . $search_category;
 if (!empty($search_type)) $criteria[] = "Type: " . $search_type;
-if (!empty($search_storage)) $criteria[] = "Storage: " . $search_storage . "GB";
-if (!empty($search_branch) && $role !== 'manager') $criteria[] = "Branch: " . $search_branch;
+if (!empty($search_storage)) $criteria[] = "Storage: " . $search_storage;
+if (!empty($search_branch) && $role !== 'manager') $criteria[] = "Branch: " . ($search_branch === '__NULL__' ? 'Unassigned / No Branch' : $search_branch);
 if ($role === 'manager' && !empty($user_branch)) $criteria[] = "Branch: " . $user_branch;
 if (!empty($date_from) && !empty($date_to)) $criteria[] = "Date: " . $date_from . " to " . $date_to;
 if (!empty($filter_salesperson) && in_array($role, ['super_admin', 'inventory_admin'])) {
@@ -133,7 +137,7 @@ $row++;
 $row++;
 
 // ---- Headers ----
-$headers = ['#', 'Category', 'Type', 'Storage (GB)', 'Quantity', 'Selling Price (KES)', 'Total (KES)', 'Branch', 'Sold By', 'Date Sold'];
+$headers = ['#', 'Category', 'Type', 'Storage / Specification', 'Quantity', 'Selling Price (KES)', 'Total (KES)', 'Branch', 'Sold By', 'Date Sold'];
 $headerRow = $row;
 foreach ($headers as $idx => $header) {
     $sheet->setCellValue(chr(65 + $idx) . $headerRow, $header);
@@ -159,7 +163,7 @@ foreach ($sales as $sale) {
     $sheet->setCellValue('E' . $dataRow, $sale['quantity']);
     $sheet->setCellValue('F' . $dataRow, $sale['selling_price']);
     $sheet->setCellValue('G' . $dataRow, $sale['total_price']);
-    $sheet->setCellValue('H' . $dataRow, $sale['branch']);
+    $sheet->setCellValue('H' . $dataRow, !empty($sale['branch']) ? $sale['branch'] : 'Unassigned');
     $sheet->setCellValue('I' . $dataRow, $sale['sold_by_name'] ?? 'Unknown');
     $sheet->setCellValue('J' . $dataRow, date('Y-m-d H:i:s', strtotime($sale['date_sold'])));
     $dataRow++;

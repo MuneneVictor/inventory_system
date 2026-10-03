@@ -14,7 +14,7 @@ if (!in_array($role, ['super_admin', 'inventory_admin', 'manager'])) {
 }
 
 $user_branch = null;
-if ($role !== 'super_admin') {
+if ($role === 'manager') {
     $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
     $user_branch = $stmt->fetchColumn();
@@ -132,7 +132,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['return_ram_ssd'])) {
 
                 // Activity log with proof file info
                 $action = ($return_qty == $log['quantity_given']) ? "Returned RAM/SSD (full)" : "Returned RAM/SSD (partial)";
-                $details = "Returned {$return_qty} {$log['category']}(s) ({$log['type']}, {$log['storage']}GB) from log ID {$log_id}. " .
+                $branchLabel = $log['branch'] ?: 'Unassigned';
+                $details = "Returned {$return_qty} {$log['category']}(s) ({$log['type']}, {$log['storage']}) from {$branchLabel} stock, log ID {$log_id}. " .
                            ($return_qty == $log['quantity_given'] ? "Status set to returned." : "Remaining quantity: {$new_log_qty}.");
                 $details .= " <a href='{$uploaded_file}' target='_blank'>View Photo</a>";
                 $activity = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, ?, ?)");
@@ -188,15 +189,19 @@ $sql = "SELECT l.*,
 $params = [];
 
 // Manager/role branch restriction
-if ($role !== 'super_admin' && !empty($user_branch)) {
+if ($role === 'manager' && !empty($user_branch)) {
     $sql .= " AND l.branch = :user_branch";
     $params['user_branch'] = $user_branch;
 }
 
 // Filters
-if ($filter_branch && $role === 'super_admin') {
-    $sql .= " AND l.branch = :branch";
-    $params['branch'] = $filter_branch;
+if ($filter_branch && in_array($role, ['super_admin', 'inventory_admin'], true)) {
+    if ($filter_branch === '__NULL__') {
+        $sql .= " AND l.branch IS NULL";
+    } else {
+        $sql .= " AND l.branch = :branch";
+        $params['branch'] = $filter_branch;
+    }
 }
 if ($filter_status) {
     $sql .= " AND l.status = :status";
@@ -211,12 +216,18 @@ if ($date_to) {
     $params['date_to'] = $date_to;
 }
 if ($search) {
-    $sql .= " AND (l.type LIKE :search OR u_given_to.full_name LIKE :search OR u_given_by.full_name LIKE :search)";
+    $sql .= " AND (
+        LOWER(l.type) LIKE LOWER(:search)
+        OR LOWER(l.storage) LIKE LOWER(:search)
+        OR LOWER(l.category) LIKE LOWER(:search)
+        OR LOWER(u_given_to.full_name) LIKE LOWER(:search)
+        OR LOWER(u_given_by.full_name) LIKE LOWER(:search)
+    )";
     $params['search'] = "%$search%";
 }
 
 $__baseSql = $sql;
-$__statsSql = "SELECT COUNT(*) AS total_rows, COALESCE(SUM(quantity_given),0) AS total_quantity, COUNT(DISTINCT branch) AS branch_count, COUNT(DISTINCT status) AS status_count FROM (" . $__baseSql . ") AS filtered_rows";
+$__statsSql = "SELECT COUNT(*) AS total_rows, COALESCE(SUM(quantity_given),0) AS total_quantity, COUNT(DISTINCT COALESCE(branch, '__UNASSIGNED__')) AS branch_count, COUNT(DISTINCT status) AS status_count FROM (" . $__baseSql . ") AS filtered_rows";
 $__statsStmt = $conn->prepare($__statsSql);
 $__statsStmt->execute($params);
 $__stats = $__statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -237,10 +248,10 @@ $stmt = $conn->prepare($sql);
 $stmt->execute($params);
 $logs = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Get branch list for filter (only if super_admin)
+// Get branch list for users who can view all stock locations.
 $branches_list = [];
-if ($role === 'super_admin') {
-    $stmt = $conn->query("SELECT DISTINCT branch FROM rams_ssds_logs ORDER BY branch");
+if (in_array($role, ['super_admin', 'inventory_admin'], true)) {
+    $stmt = $conn->query("SELECT DISTINCT branch FROM rams_ssds_logs WHERE branch IS NOT NULL AND branch <> '' ORDER BY branch");
     $branches_list = $stmt->fetchAll(PDO::FETCH_COLUMN);
 }
 
@@ -667,13 +678,14 @@ function paginationPageUrl($pageNumber) {
             <input type="hidden" name="per_page" value="<?= (int)$per_page ?>">
             <div class="search-group">
                 <label>Search</label>
-                <input type="text" name="search" placeholder="Type, salesperson..." value="<?= htmlspecialchars($search) ?>">
+                <input type="text" name="search" placeholder="Type, storage, category, salesperson..." value="<?= htmlspecialchars($search) ?>">
             </div>
-            <?php if ($role === 'super_admin'): ?>
+            <?php if (in_array($role, ['super_admin', 'inventory_admin'], true)): ?>
             <div class="search-group">
                 <label>Branch</label>
                 <select name="branch">
                     <option value="">-- All Branches --</option>
+                    <option value="__NULL__" <?= $filter_branch === '__NULL__' ? 'selected' : '' ?>>Unassigned / No Branch</option>
                     <?php foreach ($branches_list as $b): ?>
                         <option value="<?= htmlspecialchars($b) ?>" <?= $filter_branch == $b ? 'selected' : '' ?>><?= htmlspecialchars($b) ?></option>
                     <?php endforeach; ?>
@@ -722,7 +734,7 @@ function paginationPageUrl($pageNumber) {
                             <th>#</th>
                             <th>Category</th>
                             <th>Type</th>
-                            <th>Storage (GB)</th>
+                            <th>Storage / Specification</th>
                             <th>Qty</th>
                             <th>Given To</th>
                             <th>Given By</th>
@@ -750,8 +762,8 @@ function paginationPageUrl($pageNumber) {
                                 <td><?= htmlspecialchars($log['given_to_name'] ?? 'Unknown') ?></td>
                                 <td><?= htmlspecialchars($log['given_by_name'] ?? 'Unknown') ?></td>
                                 <td>
-                                    <span class="<?= $log['branch'] == 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>">
-                                        <?= htmlspecialchars($log['branch']) ?>
+                                    <span class="<?= $log['branch'] === 'KIMATHI' ? 'branch-kimathi' : ($log['branch'] === 'MOI' ? 'branch-moi' : '') ?>">
+                                        <?= !empty($log['branch']) ? htmlspecialchars($log['branch']) : 'Unassigned' ?>
                                     </span>
                                 </td>
                                 <td><span class="badge <?= $statusClass ?>"><?= $statusLabel ?></span></td>

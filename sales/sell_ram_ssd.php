@@ -33,7 +33,7 @@ function buildRamSsdSpecs($log) {
     $specs = "";
     if (!empty($log['category'])) $specs .= $log['category'];
     if (!empty($log['type'])) $specs .= " | " . $log['type'];
-    if (!empty($log['storage'])) $specs .= " | " . $log['storage'] . "GB";
+    if (!empty($log['storage'])) $specs .= " | " . $log['storage'];
     return trim($specs, " |");
 }
 
@@ -131,7 +131,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['sell_ram_ssd'])) {
             $activity = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'Sold RAM/SSD', ?)");
             $activity->execute([
                 $user_id,
-                "Sold {$log['category']} ({$log['type']}, {$log['storage']}GB) - Quantity: {$log['quantity_given']} for KES " . number_format($selling_price, 2) . " in sale #$sale_id"
+                "Sold {$log['category']} ({$log['type']}, {$log['storage']}) - Quantity: {$log['quantity_given']} - Branch: " . ($log['branch'] ?: 'Unassigned') . " for KES " . number_format($selling_price, 2) . " in sale #$sale_id"
             ]);
 
             $conn->commit();
@@ -274,7 +274,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                         <th>#</th>
                         <th>Category</th>
                         <th>Type</th>
-                        <th>Storage (GB)</th>
+                        <th>Storage / Specification</th>
                         <th>Quantity</th>
                         <th>Branch</th>
                         <th>Set Price (KES)</th>
@@ -289,7 +289,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                             <td><strong><?= htmlspecialchars($log['type']) ?></strong></td>
                             <td><?= htmlspecialchars($log['storage']) ?></td>
                             <td><span class="badge"><?= (int)$log['quantity_given'] ?></span></td>
-                            <td><span class="badge"><?= htmlspecialchars($log['branch']) ?></span></td>
+                            <td><span class="badge"><?= !empty($log['branch']) ? htmlspecialchars($log['branch']) : 'Unassigned' ?></span></td>
                             <td>
                                 <?php if ($log['stock_price'] !== null): ?>
                                     <span class="text-muted"><?= number_format($log['stock_price'], 2) ?></span>

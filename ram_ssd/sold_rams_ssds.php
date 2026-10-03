@@ -59,16 +59,20 @@ if ($search_category) {
     $params['category'] = $search_category;
 }
 if ($search_type) {
-    $sql .= " AND s.type LIKE :type";
+    $sql .= " AND LOWER(s.type) LIKE LOWER(:type)";
     $params['type'] = "%$search_type%";
 }
 if ($search_storage) {
-    $sql .= " AND s.storage = :storage";
-    $params['storage'] = $search_storage;
+    $sql .= " AND LOWER(s.storage) LIKE LOWER(:storage)";
+    $params['storage'] = "%$search_storage%";
 }
 if ($search_branch && $role !== 'manager') {
-    $sql .= " AND s.branch = :branch";
-    $params['branch'] = $search_branch;
+    if ($search_branch === '__NULL__') {
+        $sql .= " AND s.branch IS NULL";
+    } else {
+        $sql .= " AND s.branch = :branch";
+        $params['branch'] = $search_branch;
+    }
 }
 if ($date_from) {
     $sql .= " AND DATE(s.date_sold) >= :date_from";
@@ -85,7 +89,7 @@ if (in_array($role, ['super_admin', 'inventory_admin']) && !empty($filter_salesp
 }
 
 $__baseSql = $sql;
-$__statsSql = "SELECT COUNT(*) AS total_rows, COALESCE(SUM(quantity),0) AS total_quantity, COALESCE(SUM(total_price),0) AS total_revenue, COUNT(DISTINCT branch) AS branch_count FROM (" . $__baseSql . ") AS filtered_rows";
+$__statsSql = "SELECT COUNT(*) AS total_rows, COALESCE(SUM(quantity),0) AS total_quantity, COALESCE(SUM(total_price),0) AS total_revenue, COUNT(DISTINCT COALESCE(branch, '__UNASSIGNED__')) AS branch_count FROM (" . $__baseSql . ") AS filtered_rows";
 $__statsStmt = $conn->prepare($__statsSql);
 $__statsStmt->execute($params);
 $__stats = $__statsStmt->fetch(PDO::FETCH_ASSOC) ?: [];
@@ -457,14 +461,15 @@ function paginationPageUrl($pageNumber) {
                 <input type="text" name="type" placeholder="e.g., SATA, DDR4" value="<?= htmlspecialchars($search_type) ?>">
             </div>
             <div class="search-group">
-                <label>Storage (GB)</label>
-                <input type="number" name="storage" placeholder="e.g., 256" value="<?= htmlspecialchars($search_storage) ?>">
+                <label>Storage / Specification</label>
+                <input type="text" name="storage" placeholder="e.g., 8GB, 3200MHz, 512GB NVMe" value="<?= htmlspecialchars($search_storage) ?>">
             </div>
             <?php if ($role !== 'manager'): ?>
             <div class="search-group">
                 <label>Branch</label>
                 <select name="branch">
                     <option value="">-- All Branches --</option>
+                    <option value="__NULL__" <?= $search_branch === '__NULL__' ? 'selected' : '' ?>>Unassigned / No Branch</option>
                     <option value="KIMATHI" <?= $search_branch == 'KIMATHI' ? 'selected' : '' ?>>KIMATHI</option>
                     <option value="MOI" <?= $search_branch == 'MOI' ? 'selected' : '' ?>>MOI</option>
                 </select>
@@ -517,7 +522,7 @@ function paginationPageUrl($pageNumber) {
                             <th>#</th>
                             <th>Category</th>
                             <th>Type</th>
-                            <th>Storage (GB)</th>
+                            <th>Storage / Specification</th>
                             <th>Qty</th>
                             <th>Selling Price (KES)</th>
                             <th>Total (KES)</th>
@@ -537,8 +542,8 @@ function paginationPageUrl($pageNumber) {
                                 <td class="price"><?= $s['selling_price'] ? 'KES '.number_format($s['selling_price'], 2) : '-' ?></td>
                                 <td class="price"><?= $s['total_price'] ? 'KES '.number_format($s['total_price'], 2) : '-' ?></td>
                                 <td>
-                                    <span class="<?= $s['branch'] == 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>">
-                                        <?= htmlspecialchars($s['branch']) ?>
+                                    <span class="<?= $s['branch'] === 'KIMATHI' ? 'branch-kimathi' : ($s['branch'] === 'MOI' ? 'branch-moi' : '') ?>">
+                                        <?= !empty($s['branch']) ? htmlspecialchars($s['branch']) : 'Unassigned' ?>
                                     </span>
                                 </td>
                                 <td><?= htmlspecialchars($s['sold_by_name'] ?? 'N/A') ?></td>

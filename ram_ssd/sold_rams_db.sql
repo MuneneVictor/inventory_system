@@ -1,0 +1,4 @@
+ALTER TABLE sold_rams_ssds
+    MODIFY type VARCHAR(255) NULL,
+    MODIFY storage VARCHAR(255) NULL,
+    MODIFY branch ENUM('MOI','KIMATHI') NULL DEFAULT NULL;

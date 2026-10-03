@@ -113,7 +113,7 @@ function buildInventoryUnion($filters, &$params) {
         ],
         [
             'category' => 'RAM/SSD',
-            'sql' => "SELECT CONCAT(r.category, ' ', r.type, ' ', r.storage, 'GB') AS item_name,
+            'sql' => "SELECT CONCAT(r.category, ' ', r.type, ' ', r.storage) AS item_name,
                            'RAM/SSD' AS category,
                            r.branch, r.date_added, CAST(r.id AS CHAR) AS ref_id,
                            'ram_ssd' AS source, r.added_by, u.full_name AS added_by_name,

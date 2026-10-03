@@ -10,27 +10,16 @@ if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin'])) {
 $user_id = (int) $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 
-$user_branch = null;
-if ($user_role !== 'super_admin') {
-    $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
-    $stmt->execute([$user_id]);
-    $user_branch = $stmt->fetchColumn();
-    if (!$user_branch) die("Your account has no branch assigned.");
-}
-
-// For super_admin: fetch all branches
+// Super Admin and Inventory Admin can give stock from any branch,
+// including stock that is currently unassigned (branch IS NULL).
 $all_branches = [];
-if ($user_role === 'super_admin') {
-    $branch_stmt = $conn->prepare("SELECT DISTINCT branch FROM users WHERE branch IS NOT NULL ORDER BY branch");
-    $branch_stmt->execute();
-    $all_branches = $branch_stmt->fetchAll(PDO::FETCH_COLUMN);
-}
+$branch_stmt = $conn->prepare("SELECT DISTINCT branch FROM rams_ssds WHERE branch IS NOT NULL AND branch <> '' ORDER BY branch");
+$branch_stmt->execute();
+$all_branches = $branch_stmt->fetchAll(PDO::FETCH_COLUMN);
 
-$selected_branch = $user_branch;
-if ($user_role === 'super_admin' && isset($_GET['branch']) && $_GET['branch']) {
-    $selected_branch = $_GET['branch'];
-} elseif ($user_role === 'super_admin' && empty($selected_branch) && !empty($all_branches)) {
-    $selected_branch = $all_branches[0];
+$selected_branch = isset($_GET['branch']) ? (string)$_GET['branch'] : '';
+if ($selected_branch === '') {
+    $selected_branch = '__NULL__';
 }
 
 $error = "";
@@ -38,39 +27,63 @@ $success = "";
 $stocks = [];
 $sales_users = [];
 
-if ($selected_branch) {
-    // Fetch available stock
+if ($selected_branch === '__NULL__') {
+    $stockStmt = $conn->prepare("SELECT * FROM rams_ssds WHERE branch IS NULL AND quantity > 0 ORDER BY category, type, storage");
+    $stockStmt->execute();
+
+    // Unassigned stock may be given to any active sales user.
+    $userStmt = $conn->prepare("SELECT id, full_name FROM users WHERE role = 'sales' AND is_active = 1 ORDER BY full_name");
+    $userStmt->execute();
+} else {
     $stockStmt = $conn->prepare("SELECT * FROM rams_ssds WHERE branch = ? AND quantity > 0 ORDER BY category, type, storage");
     $stockStmt->execute([$selected_branch]);
-    $stocks = $stockStmt->fetchAll(PDO::FETCH_ASSOC);
 
-    // Fetch sales users in that branch
-    $userStmt = $conn->prepare("SELECT id, full_name FROM users WHERE role = 'sales' AND branch = ? ORDER BY full_name");
+    $userStmt = $conn->prepare("SELECT id, full_name FROM users WHERE role = 'sales' AND branch = ? AND is_active = 1 ORDER BY full_name");
     $userStmt->execute([$selected_branch]);
-    $sales_users = $userStmt->fetchAll(PDO::FETCH_ASSOC);
 }
+
+$stocks = $stockStmt->fetchAll(PDO::FETCH_ASSOC);
+$sales_users = $userStmt->fetchAll(PDO::FETCH_ASSOC);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $ram_ssd_id = (int) ($_POST['ram_ssd_id'] ?? 0);
     $quantity_given = (int) ($_POST['quantity'] ?? 0);
     $given_to = (int) ($_POST['given_to'] ?? 0);
-    $branch = trim($_POST['branch'] ?? '');
+    $branch_value = trim((string)($_POST['branch'] ?? ''));
+    $branch = ($branch_value === '' || $branch_value === '__NULL__') ? null : $branch_value;
 
-    if (!$ram_ssd_id || $quantity_given <= 0 || !$given_to || !$branch) {
-        $error = "All fields are required.";
+    if (!$ram_ssd_id || $quantity_given <= 0 || !$given_to) {
+        $error = "Item, quantity and salesperson are required.";
     } else {
         try {
             $conn->beginTransaction();
 
             // Get current stock item
-            $itemStmt = $conn->prepare("SELECT * FROM rams_ssds WHERE id = ? AND branch = ? FOR UPDATE");
-            $itemStmt->execute([$ram_ssd_id, $branch]);
+            if ($branch === null) {
+                $itemStmt = $conn->prepare("SELECT * FROM rams_ssds WHERE id = ? AND branch IS NULL FOR UPDATE");
+                $itemStmt->execute([$ram_ssd_id]);
+            } else {
+                $itemStmt = $conn->prepare("SELECT * FROM rams_ssds WHERE id = ? AND branch = ? FOR UPDATE");
+                $itemStmt->execute([$ram_ssd_id, $branch]);
+            }
             $item = $itemStmt->fetch(PDO::FETCH_ASSOC);
             if (!$item) {
                 throw new Exception("Item not found.");
             }
             if ($item['quantity'] < $quantity_given) {
                 throw new Exception("Insufficient quantity. Available: {$item['quantity']}");
+            }
+
+            // Validate the salesperson before creating the log.
+            if ($branch === null) {
+                $salesCheck = $conn->prepare("SELECT id FROM users WHERE id = ? AND role = 'sales' AND is_active = 1");
+                $salesCheck->execute([$given_to]);
+            } else {
+                $salesCheck = $conn->prepare("SELECT id FROM users WHERE id = ? AND role = 'sales' AND is_active = 1 AND branch = ?");
+                $salesCheck->execute([$given_to, $branch]);
+            }
+            if (!$salesCheck->fetchColumn()) {
+                throw new Exception("Selected salesperson is not valid for this stock.");
             }
 
             // Update quantity
@@ -89,14 +102,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($salesStmt->rowCount()) $sales_name = $salesStmt->fetchColumn();
 
             $activity = $conn->prepare("INSERT INTO activity_logs (user_id, action, details) VALUES (?, 'Give out RAM/SSD', ?)");
-            $activity->execute([$user_id, "Gave {$quantity_given} {$item['category']} ({$item['type']}, {$item['storage']}GB) to {$sales_name} in {$branch} branch"]);
+            $branchLabel = $branch ?? 'Unassigned';
+            $activity->execute([$user_id, "Gave {$quantity_given} {$item['category']} ({$item['type']}, {$item['storage']}) to {$sales_name} from {$branchLabel} stock"]);
 
             $conn->commit();
             $success = "Successfully gave out {$quantity_given} unit(s).";
 
             // Refresh stock list
-            $stockStmt = $conn->prepare("SELECT * FROM rams_ssds WHERE branch = ? AND quantity > 0 ORDER BY category, type, storage");
-            $stockStmt->execute([$selected_branch]);
+            if ($selected_branch === '__NULL__') {
+                $stockStmt = $conn->prepare("SELECT * FROM rams_ssds WHERE branch IS NULL AND quantity > 0 ORDER BY category, type, storage");
+                $stockStmt->execute();
+            } else {
+                $stockStmt = $conn->prepare("SELECT * FROM rams_ssds WHERE branch = ? AND quantity > 0 ORDER BY category, type, storage");
+                $stockStmt->execute([$selected_branch]);
+            }
             $stocks = $stockStmt->fetchAll(PDO::FETCH_ASSOC);
         } catch (Exception $e) {
             $conn->rollBack();
@@ -194,12 +213,13 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     <div class="alert alert-success"><i class="fas fa-check-circle"></i> <?= htmlspecialchars($success) ?></div>
                 <?php endif; ?>
 
-                <?php if ($user_role === 'super_admin'): ?>
+                <?php if (in_array($user_role, ['super_admin', 'inventory_admin'], true)): ?>
                 <div class="info-box">
                     <form method="GET" style="margin:0; display:flex; gap:1rem; flex-wrap:wrap; align-items:flex-end;">
                         <div style="flex:1;">
                             <label>Select Branch</label>
                             <select name="branch" onchange="this.form.submit()" style="width:100%; padding:0.6rem;">
+                                <option value="__NULL__" <?= $selected_branch === '__NULL__' ? 'selected' : '' ?>>Unassigned / No Branch</option>
                                 <?php foreach ($all_branches as $b): ?>
                                     <option value="<?= htmlspecialchars($b) ?>" <?= $selected_branch == $b ? 'selected' : '' ?>><?= htmlspecialchars($b) ?></option>
                                 <?php endforeach; ?>
@@ -209,12 +229,10 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                 </div>
                 <?php endif; ?>
 
-                <?php if (!$selected_branch): ?>
-                    <div class="alert alert-error">No branch selected or available.</div>
-                <?php elseif (empty($stocks)): ?>
-                    <div class="alert alert-error">No RAM/SSD items available in stock for <?= htmlspecialchars($selected_branch) ?> branch.</div>
+                <?php if (empty($stocks)): ?>
+                    <div class="alert alert-error">No RAM/SSD items available for <?= $selected_branch === '__NULL__' ? 'Unassigned stock' : htmlspecialchars($selected_branch) . ' branch' ?>.</div>
                 <?php elseif (empty($sales_users)): ?>
-                    <div class="alert alert-error">No sales users found in <?= htmlspecialchars($selected_branch) ?> branch.</div>
+                    <div class="alert alert-error">No active sales users available for this stock selection.</div>
                 <?php else: ?>
                     <form method="POST">
                         <input type="hidden" name="branch" value="<?= htmlspecialchars($selected_branch) ?>">
@@ -224,7 +242,7 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                                 <option value="">-- Choose Item --</option>
                                 <?php foreach ($stocks as $s): ?>
                                     <option value="<?= $s['id'] ?>">
-                                        <?= htmlspecialchars($s['category']) ?> - <?= htmlspecialchars($s['type']) ?> (<?= $s['storage'] ?>GB) - Available: <?= $s['quantity'] ?>
+                                        <?= htmlspecialchars($s['category']) ?> - <?= htmlspecialchars($s['type']) ?> (<?= htmlspecialchars((string)$s['storage']) ?>) - Available: <?= $s['quantity'] ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>

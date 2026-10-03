@@ -292,10 +292,10 @@ function fetchRecentSalesAllBranches($conn, $limit = 10) {
     if ($stmt) $allSales = array_merge($allSales, $stmt->fetchAll(PDO::FETCH_ASSOC));
 
     // 11. Sold RAM/SSD
-    $sql = "SELECT CONCAT(COALESCE(srs.type,''), ' ', COALESCE(srs.storage,''), 'GB') AS item_name, srs.category AS category, 
+    $sql = "SELECT CONCAT(COALESCE(srs.type,''), ' ', COALESCE(srs.storage,'')) AS item_name, srs.category AS category, 
                    NULL AS id, srs.total_price AS price, 
                    srs.date_sold AS sold_at, srs.branch, srs.sold_by, u.full_name AS sold_by_name,
-                   CONCAT(srs.quantity, ' x ', srs.type, ' ', srs.storage, 'GB') AS specs
+                   CONCAT(srs.quantity, ' x ', srs.type, ' ', srs.storage) AS specs
             FROM sold_rams_ssds srs
             LEFT JOIN users u ON srs.sold_by = u.id";
     $stmt = secureQuery($conn, $sql);

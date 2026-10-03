@@ -52,16 +52,20 @@ if ($search_category) {
     $params['category'] = $search_category;
 }
 if ($search_type) {
-    $sql .= " AND r.type LIKE :type";
+    $sql .= " AND LOWER(r.type) LIKE LOWER(:type)";
     $params['type'] = "%$search_type%";
 }
 if ($search_storage) {
-    $sql .= " AND r.storage = :storage";
-    $params['storage'] = $search_storage;
+    $sql .= " AND LOWER(r.storage) LIKE LOWER(:storage)";
+    $params['storage'] = "%$search_storage%";
 }
 if ($search_branch && $role !== 'manager') {
-    $sql .= " AND r.branch = :branch";
-    $params['branch'] = $search_branch;
+    if ($search_branch === '__NULL__') {
+        $sql .= " AND r.branch IS NULL";
+    } else {
+        $sql .= " AND r.branch = :branch";
+        $params['branch'] = $search_branch;
+    }
 }
 
 $sql .= " ORDER BY r.date_added DESC";
@@ -98,8 +102,8 @@ $filterNote = "Filters applied: ";
 $criteria = [];
 if (!empty($search_category)) $criteria[] = "Category: " . $search_category;
 if (!empty($search_type)) $criteria[] = "Type: " . $search_type;
-if (!empty($search_storage)) $criteria[] = "Storage: " . $search_storage . "GB";
-if (!empty($search_branch) && $role !== 'manager') $criteria[] = "Branch: " . $search_branch;
+if (!empty($search_storage)) $criteria[] = "Storage: " . $search_storage;
+if (!empty($search_branch) && $role !== 'manager') $criteria[] = "Branch: " . ($search_branch === '__NULL__' ? 'Unassigned / No Branch' : $search_branch);
 if ($role === 'manager' && !empty($user_branch)) $criteria[] = "Branch: " . $user_branch;
 $filterNote .= !empty($criteria) ? implode(', ', $criteria) : "None (All data)";
 
@@ -113,7 +117,7 @@ $row++;
 $row++;
 
 // ---- Headers ----
-$headers = ['#', 'Category', 'Type', 'Storage (GB)', 'Quantity', 'Branch', 'Price (KES)', 'Total Value (KES)', 'Added By', 'Updated By', 'Date Added'];
+$headers = ['#', 'Category', 'Type', 'Storage / Specification', 'Quantity', 'Branch', 'Price (KES)', 'Total Value (KES)', 'Added By', 'Updated By', 'Date Added'];
 $headerRow = $row;
 foreach ($headers as $idx => $header) {
     $sheet->setCellValue(chr(65 + $idx) . $headerRow, $header);
@@ -137,7 +141,7 @@ foreach ($items as $item) {
     $sheet->setCellValue('C' . $dataRow, $item['type']);
     $sheet->setCellValue('D' . $dataRow, $item['storage']);
     $sheet->setCellValue('E' . $dataRow, $item['quantity']);
-    $sheet->setCellValue('F' . $dataRow, $item['branch']);
+    $sheet->setCellValue('F' . $dataRow, !empty($item['branch']) ? $item['branch'] : 'Unassigned');
     $sheet->setCellValue('G' . $dataRow, $item['price'] ?? '');
     $sheet->setCellValue('H' . $dataRow, $item['total_price'] ?? '');
     $sheet->setCellValue('I' . $dataRow, $item['added_by_name'] ?? 'N/A');
