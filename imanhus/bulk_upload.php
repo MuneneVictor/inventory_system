@@ -20,8 +20,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_FILES['excel_file'])){try{$book=
             $itemType=inferType($form,$cpu,$ram,$storage);
             $location=$userBranch!==''?$userBranch:null;
             if($serial!==null){$check->execute([$serial]);if($check->fetchColumn()){$duplicates[]=$serial;continue;}}
-            $actual=$status==='Sold'?$sp:null;$soldAt=$status==='Sold'?date('Y-m-d H:i:s'):null;
-            $insert->execute([$itemType,$asset,$mfg,$model,$form,$cpu,$ram,$storage,$serial,$grade,$bp,$sp,$notes,$location,$status,$actual,$soldAt,$user_id]);
+            // For rows uploaded as Sold, S.P is also the device's actual selling price.
+            $actualSellingPrice = ($status === 'Sold') ? $sp : null;
+            $soldAt = ($status === 'Sold') ? date('Y-m-d H:i:s') : null;
+            $insert->execute([$itemType,$asset,$mfg,$model,$form,$cpu,$ram,$storage,$serial,$grade,$bp,$sp,$notes,$location,$status,$actualSellingPrice,$soldAt,$user_id]);
         $count++;}$success="$count row(s) uploaded successfully.";}catch(Throwable$e){$error=$e->getMessage();}}
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Iman's Hustle Bulk Upload</title>
@@ -32,7 +34,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_FILES['excel_file'])){try{$book=
 <?php if($success):?><div class="alert ok"><?=htmlspecialchars($success)?></div><?php endif;?><?php if($error):?><div class="alert err"><?=htmlspecialchars($error)?></div><?php endif;?><?php if($duplicates):?><div class="alert warn"><strong>Duplicate serials skipped:</strong> <?=htmlspecialchars(implode(', ',array_unique($duplicates)))?></div><?php endif;?>
 <section class="box"><h2>Required Excel Layout</h2><p class="rules">Keep the columns in this order. The header row should remain present. Individual cells may be empty.</p><div class="format"><table><thead><tr><?php foreach($headers as$h):?><th><?=htmlspecialchars($h)?></th><?php endforeach;?></tr></thead><tbody><tr><?php foreach($sample as$v):?><td><?=htmlspecialchars((string)$v)?></td><?php endforeach;?></tr></tbody></table></div><ul class="rules">
         <li><strong>All cells are optional.</strong> Empty cells are stored as NULL; they do not reject the row.</li>
-        <li><strong>Status:</strong> blank or "-" automatically becomes In Stock. Use Sold only for already-sold stock.</li>
+        <li><strong>Status:</strong> blank or "-" automatically becomes In Stock. Use Sold only for already-sold stock. When Status is <strong>Sold</strong>, the supplied <strong>S.P</strong> is also saved as that device\'s <strong>actual selling price</strong>.</li>
         <li><strong>Item Type:</strong> inferred automatically. Monitor-like rows can live in this independent table too.</li>
         <li><strong>B.P / S.P:</strong> numeric values; commas and KES/KSH are accepted. PROFIT does not need to be supplied because reports calculate it.</li>
         <li><strong>Location:</strong> this existing Hustle sheet has no LOCATION column, so the uploader uses the logged-in user's assigned branch when available.</li>

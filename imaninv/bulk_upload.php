@@ -19,8 +19,10 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_FILES['excel_file'])){try{$book=
             $mfg=val($r,6);$model=val($r,7);$cpu=val($r,8);$ram=val($r,9);$storage=val($r,10);$serial=val($r,11);$grade=val($r,12);$touch=val($r,13);$webcam=val($r,14);$notes=val($r,15);
             $location=locv($r[16]??null);$status=statv($r[17]??null);$itemType=inferType(null,$cpu,$ram,$storage);
             if($serial!==null){$check->execute([$serial]);if($check->fetchColumn()){$duplicates[]=$serial;continue;}}
-            $actual=$status==='Sold'?$sp:null;$soldAt=$status==='Sold'?date('Y-m-d H:i:s'):null;
-            $insert->execute([$itemType,$asset,$buyUsd,$sellUsd,$bp,$sp,$mfg,$model,$cpu,$ram,$storage,$serial,$grade,$touch,$webcam,$notes,$location,$status,$actual,$soldAt,$user_id]);
+            // Sold rows: SP becomes the device's actual selling price.
+            $actualSellingPrice = ($status === 'Sold') ? $sp : null;
+            $soldAt = ($status === 'Sold') ? date('Y-m-d H:i:s') : null;
+            $insert->execute([$itemType,$asset,$buyUsd,$sellUsd,$bp,$sp,$mfg,$model,$cpu,$ram,$storage,$serial,$grade,$touch,$webcam,$notes,$location,$status,$actualSellingPrice,$soldAt,$user_id]);
         $count++;}$success="$count row(s) uploaded successfully.";}catch(Throwable$e){$error=$e->getMessage();}}
 ?>
 <!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Iman Inventory Bulk Upload</title>
@@ -34,7 +36,7 @@ if($_SERVER['REQUEST_METHOD']==='POST'&&isset($_FILES['excel_file'])){try{$book=
         <li><strong>Symetic</strong> is Buying Price in USD and <strong>$</strong> is Selling Price in USD.</li>
         <li><strong>BP / SP</strong> are the KES buying and planned selling prices. PROFIT can be blank because reports calculate it.</li>
         <li><strong>LOCATION:</strong> KIMATHI, MOI or WAREHOUSE. Blank/unknown values are stored as NULL.</li>
-        <li><strong>Status:</strong> blank or "-" becomes In Stock. Use Sold only for already-sold stock.</li>
+        <li><strong>Status:</strong> blank or "-" becomes In Stock. Use Sold only for already-sold stock. For a <strong>Sold</strong> row, the <strong>SP</strong> value is saved as the device\'s <strong>actual selling price</strong>.</li>
         <li><strong>Item Type:</strong> rows with no CPU, RAM and Storage are treated as Monitor; otherwise Device.</li>
         </ul></section>
 <section class="box"><h2>Upload File</h2><form method="post" enctype="multipart/form-data"><input type="file" name="excel_file" accept=".xlsx,.xls,.csv" required><button class="btn" style="margin-top:1rem"><i class="fas fa-upload"></i> Upload and Process</button></form></section>
