@@ -48,16 +48,20 @@ if ($search_category) {
     $params['category'] = $search_category;
 }
 if ($search_type) {
-    $sql .= " AND r.type LIKE :type";
+    $sql .= " AND LOWER(r.type) LIKE LOWER(:type)";
     $params['type'] = "%$search_type%";
 }
 if ($search_storage) {
-    $sql .= " AND r.storage = :storage";
-    $params['storage'] = $search_storage;
+    $sql .= " AND LOWER(r.storage) LIKE LOWER(:storage)";
+    $params['storage'] = "%$search_storage%";
 }
 if ($search_branch && $role !== 'manager') {
-    $sql .= " AND r.branch = :branch";
-    $params['branch'] = $search_branch;
+    if ($search_branch === '__NULL__') {
+        $sql .= " AND r.branch IS NULL";
+    } else {
+        $sql .= " AND r.branch = :branch";
+        $params['branch'] = $search_branch;
+    }
 }
 
 $sql .= " ORDER BY r.date_added DESC";
@@ -416,14 +420,15 @@ $branches = array_unique(array_column($items, 'branch'));
                 <input type="text" name="type" placeholder="e.g., DDR4, SATA" value="<?= htmlspecialchars($search_type) ?>">
             </div>
             <div class="search-group">
-                <label>Storage (GB)</label>
-                <input type="number" name="storage" placeholder="e.g., 8, 256" value="<?= htmlspecialchars($search_storage) ?>">
+                <label>Storage / Specification</label>
+                <input type="text" name="storage" placeholder="e.g., 8GB, 3200MHz, 512GB NVMe" value="<?= htmlspecialchars($search_storage) ?>">
             </div>
             <?php if ($role !== 'manager'): ?>
             <div class="search-group">
                 <label>Branch</label>
                 <select name="branch">
                     <option value="">-- All Branches --</option>
+                    <option value="__NULL__" <?= $search_branch === '__NULL__' ? 'selected' : '' ?>>Unassigned / No Branch</option>
                     <option value="KIMATHI" <?= $search_branch == 'KIMATHI' ? 'selected' : '' ?>>KIMATHI</option>
                     <option value="MOI" <?= $search_branch == 'MOI' ? 'selected' : '' ?>>MOI</option>
                 </select>
@@ -431,7 +436,7 @@ $branches = array_unique(array_column($items, 'branch'));
             <?php endif; ?>
             <div class="search-actions">
                 <button type="submit" class="btn btn-primary"><i class="fas fa-search"></i> Search</button>
-                <a href="rams_instock" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
+                <a href="rams_instocks" class="btn btn-secondary"><i class="fas fa-undo"></i> Reset</a>
                 <?php if (!empty($items)): ?>
                     <a href="export_rams_excel?<?= http_build_query(array_merge($_GET, ['export' => '1'])) ?>" class="btn btn-excel"><i class="fas fa-file-excel"></i> Export to Excel</a>
                 <?php endif; ?>
@@ -446,7 +451,7 @@ $branches = array_unique(array_column($items, 'branch'));
                 <div class="empty-state">
                     <i class="fas fa-microchip"></i>
                     <p>No RAM/SSD items found matching your criteria.</p>
-                    <a href="rams_instock" class="btn btn-primary" style="margin-top: 1rem;">
+                    <a href="rams_instocks" class="btn btn-primary" style="margin-top: 1rem;">
                         <i class="fas fa-undo"></i> Clear Filters
                     </a>
                 </div>
@@ -457,7 +462,7 @@ $branches = array_unique(array_column($items, 'branch'));
                             <th>#</th>
                             <th>Category</th>
                             <th>Type</th>
-                            <th>Storage (GB)</th>
+                            <th>Storage / Specification</th>
                             <th>Quantity</th>
                             <th>Branch</th>
             <?php if (in_array($role, ['super_admin', 'manager'])): ?>
@@ -479,34 +484,36 @@ $branches = array_unique(array_column($items, 'branch'));
                                 <td><?= $i++ ?></td>
                                 <td><span class="badge"><?= htmlspecialchars($item['category']) ?></span></td>
                                 <td><strong><?= htmlspecialchars($item['type']) ?></strong></td>
-                                <td><?= (int)$item['storage'] ?>GB</td>
+                                <td><?= htmlspecialchars($item['storage']) ?></td>
                                 <td><span class="badge"><?= (int)$item['quantity'] ?></span></td>
                                 <td>
-                                    <span class="<?= $item['branch'] == 'KIMATHI' ? 'branch-kimathi' : 'branch-moi' ?>">
-                                        <?= htmlspecialchars($item['branch']) ?>
+                                    <span class="<?= $item['branch'] === 'KIMATHI' ? 'branch-kimathi' : ($item['branch'] === 'MOI' ? 'branch-moi' : '') ?>">
+                                        <?= !empty($item['branch']) ? htmlspecialchars($item['branch']) : 'Unassigned' ?>
                                     </span>
                                 </td>
+                                <?php if (in_array($role, ['super_admin', 'manager'])): ?>
                                 <td class="price"><?= $item['price'] !== null ? 'KES '.number_format($item['price'], 2) : '-' ?></td>
                                 <td class="price"><?= $item['total_price'] !== null ? 'KES '.number_format($item['total_price'], 2) : '-' ?></td>
+                                <?php endif; ?>
                                 <td><?= htmlspecialchars($item['added_by_name'] ?? 'N/A') ?></td>
                                 <td><?= htmlspecialchars($item['updated_by_name'] ?? 'Not updated yet') ?></td>
                                 <td><small><?= $item['date_updated'] ? date('M j, Y g:i A', strtotime($item['date_updated'])) : 'Not updated yet' ?></small></td>
                                 <td><small><?= date('M j, Y g:i A', strtotime($item['date_added'])) ?></small></td>
+                                <?php if (in_array($role, ['super_admin', 'manager'])): ?>
                                 <td>
                                     <div class="action-links">
-                                        <?php if (in_array($role, ['super_admin', 'manager'])): ?>
-                                            <?php if ($item['price'] === null): ?>
-                                                <a href="add_price_ram?id=<?= urlencode($item['id']) ?>" class="action-link">
-                                                    <i class="fas fa-plus-circle"></i> Add Price
-                                                </a>
-                                            <?php else: ?>
-                                                <a href="update_price_ram?id=<?= urlencode($item['id']) ?>" class="action-link">
-                                                    <i class="fas fa-edit"></i> Update Price
-                                                </a>
-                                            <?php endif; ?>
+                                        <?php if ($item['price'] === null): ?>
+                                            <a href="add_price_ram?id=<?= urlencode($item['id']) ?>" class="action-link">
+                                                <i class="fas fa-plus-circle"></i> Add Price
+                                            </a>
+                                        <?php else: ?>
+                                            <a href="update_price_ram?id=<?= urlencode($item['id']) ?>" class="action-link">
+                                                <i class="fas fa-edit"></i> Update Price
+                                            </a>
                                         <?php endif; ?>
                                     </div>
                                 </td>
+                                <?php endif; ?>
                             </tr>
                         <?php endforeach; ?>
                     </tbody>

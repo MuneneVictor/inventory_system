@@ -12,9 +12,10 @@ if (!in_array($_SESSION['role'], ['super_admin', 'inventory_admin', 'manager']))
 $user_id = (int) $_SESSION['user_id'];
 $user_role = $_SESSION['role'];
 
-// Get user's branch (if not super_admin)
+// Manager remains tied to their assigned branch.
+// Super admin and inventory admin may choose any branch or leave it unassigned (NULL).
 $user_branch = null;
-if ($user_role !== 'super_admin') {
+if ($user_role === 'manager') {
     $stmt = $conn->prepare("SELECT branch FROM users WHERE id = ?");
     $stmt->execute([$user_id]);
     $user_branch = $stmt->fetchColumn();
@@ -23,10 +24,9 @@ if ($user_role !== 'super_admin') {
     }
 }
 
-// For super_admin: fetch all branches
 $all_branches = [];
-if ($user_role === 'super_admin') {
-    $branch_stmt = $conn->prepare("SELECT DISTINCT branch FROM users WHERE branch IS NOT NULL ORDER BY branch");
+if (in_array($user_role, ['super_admin', 'inventory_admin'], true)) {
+    $branch_stmt = $conn->prepare("SELECT DISTINCT branch FROM users WHERE branch IS NOT NULL AND branch <> '' ORDER BY branch");
     $branch_stmt->execute();
     $all_branches = $branch_stmt->fetchAll(PDO::FETCH_COLUMN);
 }
@@ -39,21 +39,21 @@ $current_qty = 0;
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $category = trim($_POST['category'] ?? '');
     $type = trim($_POST['type'] ?? '');
-    $storage = (int) ($_POST['storage'] ?? 0);
+    $storage = trim((string)($_POST['storage'] ?? ''));
     $quantity = (int) ($_POST['quantity'] ?? 0);
     $price = !empty($_POST['price']) ? (float)$_POST['price'] : null;
     $existing_id = !empty($_POST['existing_id']) ? (int)$_POST['existing_id'] : null;
 
     // Branch determination
-    if ($user_role === 'super_admin') {
-        $branch = trim($_POST['branch'] ?? '');
-        if (!$branch) $error = "Please select a branch.";
+    if (in_array($user_role, ['super_admin', 'inventory_admin'], true)) {
+        $branchInput = trim((string)($_POST['branch'] ?? ''));
+        $branch = $branchInput === '' ? null : $branchInput;
     } else {
         $branch = $user_branch;
     }
 
-    if (!$error && (!$category || !$type || $storage <= 0 || $quantity <= 0)) {
-        $error = "All fields are required and must be positive numbers.";
+    if (!$error && ($category === '' || $type === '' || $storage === '' || $quantity <= 0)) {
+        $error = "Category, type, storage and a positive quantity are required.";
     }
 
     if (!$error) {
@@ -66,18 +66,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         price = :price, 
                         updated_by = :updated_by, 
                         date_updated = NOW() 
-                    WHERE id = :id AND branch = :branch
+                    WHERE id = :id
+                      AND ((:branch IS NULL AND branch IS NULL) OR branch = :branch_match)
                 ");
                 $stmt->execute([
                     'qty' => $quantity,
                     'price' => $price,
                     'updated_by' => $user_id,
                     'id' => $existing_id,
-                    'branch' => $branch
+                    'branch' => $branch,
+                    'branch_match' => $branch
                 ]);
                 $success = "RAM/SSD quantity updated successfully! Added $quantity units.";
                 $action = 'Updated RAM/SSD';
-                $details = "Added $quantity more units to $category ($type, {$storage}GB) in $branch branch";
+                $branchLabel = $branch ?? 'Unassigned';
+                $details = "Added $quantity more units to $category ($type, $storage) in $branchLabel branch";
             } else {
                 // Insert new
                 $stmt = $conn->prepare("
@@ -96,7 +99,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 ]);
                 $success = "New RAM/SSD added successfully!";
                 $action = 'Added RAM/SSD';
-                $details = "Added $category ($type, {$storage}GB) Qty: $quantity to $branch branch";
+                $branchLabel = $branch ?? 'Unassigned';
+                $details = "Added $category ($type, $storage) Qty: $quantity to $branchLabel branch";
             }
 
             // Log activity
@@ -506,8 +510,8 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                 <?php endif; ?>
 
                 <div class="info-box">
-                    <?php if ($user_role === 'super_admin'): ?>
-                        <strong><i class="fas fa-store"></i> You can add RAM/SSD to any branch.</strong>
+                    <?php if (in_array($user_role, ['super_admin', 'inventory_admin'], true)): ?>
+                        <strong><i class="fas fa-store"></i> You can add RAM/SSD to any branch or leave the branch unassigned.</strong>
                     <?php else: ?>
                         <strong><i class="fas fa-store"></i> Your branch: <?= htmlspecialchars($user_branch) ?></strong>
                     <?php endif; ?>
@@ -526,11 +530,11 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                     </div>
                     <div class="form-group">
                         <label>Type <span class="required">*</span></label>
-                        <input type="text" name="type" id="typeInput" required placeholder="e.g., DDR4, SATA, NVMe">
+                        <input type="text" name="type" id="typeInput" maxlength="255" required placeholder="e.g., DDR4 3200MHz, PC4-25600, SATA, NVMe">
                     </div>
                     <div class="form-group">
-                        <label>Storage Capacity (GB) <span class="required">*</span></label>
-                        <input type="number" name="storage" id="storageInput" min="1" required placeholder="e.g., 8, 16, 256, 512">
+                        <label>Storage / Specification <span class="required">*</span></label>
+                        <input type="text" name="storage" id="storageInput" maxlength="255" required placeholder="e.g., 8GB 3200MHz, 16GB DDR4, 512GB NVMe">
                     </div>
                     <div class="form-group">
                         <label id="qtyLabel">Quantity <span class="required">*</span></label>
@@ -540,11 +544,11 @@ $user_name = $_SESSION['name'] ?? ($_SESSION['full_name'] ?? 'User');
                         <label>Price (KES) <span class="optional">(optional)</span></label>
                         <input type="number" name="price" step="0.01" min="0" placeholder="Price per unit if known">
                     </div>
-                    <?php if ($user_role === 'super_admin'): ?>
+                    <?php if (in_array($user_role, ['super_admin', 'inventory_admin'], true)): ?>
                         <div class="form-group">
-                            <label>Branch <span class="required">*</span></label>
-                            <select name="branch" id="branchSelect" required>
-                                <option value="">-- Select Branch --</option>
+                            <label>Branch <span class="optional">(optional)</span></label>
+                            <select name="branch" id="branchSelect">
+                                <option value="">-- Unassigned / No Branch --</option>
                                 <?php foreach ($all_branches as $branch): ?>
                                     <option value="<?= htmlspecialchars($branch) ?>"><?= htmlspecialchars($branch) ?></option>
                                 <?php endforeach; ?>
@@ -595,7 +599,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const storage = storageInput.value.trim();
         const branch = branchSelect.value;
 
-        if (!category || type.length < 1 || !storage || parseInt(storage) <= 0 || !branch) {
+        if (!category || type.length < 1 || !storage) {
             feedbackDiv.className = 'check-feedback';
             feedbackDiv.textContent = '';
             qtyLabel.textContent = 'Quantity *';
@@ -616,17 +620,34 @@ document.addEventListener('DOMContentLoaded', function() {
                   '&storage=' + encodeURIComponent(storage) + 
                   '&branch=' + encodeURIComponent(branch)
         })
-        .then(response => response.json())
+        .then(async response => {
+            const raw = await response.text();
+            let data;
+            try {
+                data = JSON.parse(raw);
+            } catch (e) {
+                throw new Error('Server returned invalid JSON: ' + raw.substring(0, 250));
+            }
+            if (!response.ok) {
+                throw new Error(data.error || ('HTTP ' + response.status));
+            }
+            return data;
+        })
         .then(data => {
+            if (data.error) {
+                throw new Error(data.error);
+            }
             if (data.exists) {
                 feedbackDiv.className = 'check-feedback success';
-                feedbackDiv.innerHTML = '<i class="fas fa-check-circle"></i> This item already exists in <strong>' + branch + '</strong> branch. Current quantity: <strong>' + data.quantity + '</strong> units.';
+                const branchLabel = branch || 'Unassigned';
+                feedbackDiv.innerHTML = '<i class="fas fa-check-circle"></i> This item already exists for <strong>' + branchLabel + '</strong>. Current quantity: <strong>' + data.quantity + '</strong> units.';
                 qtyLabel.textContent = 'Quantity to Add *';
                 qtyInput.placeholder = 'Enter additional quantity';
                 existingIdInput.value = data.id;
             } else {
                 feedbackDiv.className = 'check-feedback warning';
-                feedbackDiv.innerHTML = '<i class="fas fa-info-circle"></i> This is a new item for <strong>' + branch + '</strong> branch. You will create it with the quantity you enter.';
+                const branchLabel = branch || 'Unassigned';
+                feedbackDiv.innerHTML = '<i class="fas fa-info-circle"></i> This is a new item for <strong>' + branchLabel + '</strong>. You will create it with the quantity you enter.';
                 qtyLabel.textContent = 'Quantity *';
                 qtyInput.placeholder = 'Enter initial quantity';
                 existingIdInput.value = '';
@@ -634,7 +655,7 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(error => {
             feedbackDiv.className = 'check-feedback warning';
-            feedbackDiv.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Could not check availability. Please try again.';
+            feedbackDiv.textContent = 'Could not check availability: ' + (error.message || 'Unknown server error');
             console.error('Error checking RAM/SSD:', error);
         });
     }
@@ -650,7 +671,7 @@ document.addEventListener('DOMContentLoaded', function() {
     branchSelect.addEventListener('change', checkRamSsd);
 
     // Initial check if fields have values
-    if (categorySelect.value && typeInput.value.trim().length >= 1 && storageInput.value.trim() && branchSelect.value) {
+    if (categorySelect.value && typeInput.value.trim().length >= 1 && storageInput.value.trim()) {
         setTimeout(checkRamSsd, 300);
     }
 

@@ -65,15 +65,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['search_serial'])) {
             $sql = "SELECT i.*, u.full_name AS added_by_name
                     FROM iman_inventory_items i
                     LEFT JOIN users u ON i.added_by = u.id
-                    WHERE i.serial_number IN ($placeholders)";
+                    WHERE LOWER(i.serial_number) IN ($placeholders)";
             $stmt = $conn->prepare($sql);
-            $stmt->execute($serials);
+            $stmt->execute(array_map(static fn($serial) => strtolower((string)$serial), $serials));
             $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
             $bySerial = [];
-            foreach ($rows as $row) $bySerial[(string)$row['serial_number']] = $row;
+            foreach ($rows as $row) $bySerial[strtolower((string)$row['serial_number'])] = $row;
             foreach ($serials as $serial) {
-                if (isset($bySerial[$serial])) $foundItems[] = $bySerial[$serial];
+                $serialKey = strtolower((string)$serial);
+                if (isset($bySerial[$serialKey])) $foundItems[] = $bySerial[$serialKey];
                 else $notFoundSerials[] = $serial;
             }
         }
